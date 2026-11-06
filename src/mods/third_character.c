@@ -70,15 +70,22 @@
  * (psx_mod_psyq_load_image) and the model's records pointed at them.
  * Host state: the upload map and Taz's pool of the last load (rebuilt on
  * every load; a savestate carries VRAM and the patched model together).
+ *
+ * Tests: {"cmd":"mod_cmd","name":"bbt.trca01","args":"show"|"group <n>"}
+ * reports the donor and where each texture group was uploaded, with pixel
+ * hashes to compare against VRAM (tests/test_game_trca01.py).
  */
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "cpu_state.h"
 #include "donor.h"
 #include "donor_tex.h"
 #include "func_override.h"
 #include "mod_plugins.h"
+#include "trca01_profile.h"
 
 #define ADDR_LEVEL_LOAD_PARSE 0x80068174u
 #define ADDR_ACTOR_LIST_DEFS  0x8008DD44u
@@ -91,9 +98,6 @@
 #define ACTOR_OFF_RES    0x098u
 #define ACTOR_OFF_RES_B  0x170u
 #define ACTOR_OFF_RES_C  0x174u
-
-#define TYPE_BUGS 0x05000181u
-#define TYPE_TAZ  0x05000190u
 
 #define MAX_ACTORS_PER_LIST 512
 
@@ -175,44 +179,7 @@ static int level_load_parse_wrap(CPUState* cpu)
 #define ADDR_STREAM_RESERVED  0x8008DCC4u   /* bytes reserved for the stream */
 #define ADDR_BLOB_BASE        0x8008DC18u   /* destination of the current call */
 
-#define DONOR_FILE        "LEVEL5/TRCA01.BZZ"
-#define DONOR_ACTOR_TYPE  0x01008381u
-/* Taz animation id -> donor animation id, by role. Animation ids are per
- * character (equal numbers mean nothing), so every entry comes from
- * watching the donor's animations played on Taz and Taz's own moves traced
- * per frame (filmstrips of both characters in Granwich, 2026-11-06;
- * NOTES.md "M2" and "M4"). DONOR_SUB_SPIN is the synthetic spin built from
- * the donor's skeleton (donor_add_spin), not a real animation id. */
-#define DONOR_SUB_SPIN    0xF001u
-#define DONOR_SPIN_FRAMES 32u
-static const DonorAnimMap kTazToTrca01[] = {
-    /* Set-up animation every character plays first: its keyframe commands
-     * push the actor's draw node (+0x9C). Without it the model is never
-     * drawn. */
-    {0x0001u, 0x0001u},
-    {0x0033u, 0x01B1u},   /* run (loops while the pad is held) -> running stride */
-    {0x0034u, 0x0145u},   /* stop after running (skid round) -> upright turning */
-    {0x0036u, 0x01C9u},   /* jump -> leap through the air and land */
-    {0x0037u, 0x00E8u},   /* fall -> arms thrown up (instead of standing upright in the air) */
-    {0x0039u, 0x014Bu},   /* land -> crouch low */
-    /* Spin (square; triangle in the air). Spin start must carry a root
-     * command (0xA00) so the game attaches the tornado: 0x01C6 (arm raised)
-     * has one on the attach node in 25 of 26 frames. The spin itself (and
-     * 0x0097, which hides Taz's body the same way) keeps the tornado on the
-     * ground; spin end -> crouched, shaking. */
-    {0x0072u, 0x01C6u},
-    {0x004Fu, DONOR_SUB_SPIN},
-    {0x0097u, DONOR_SUB_SPIN},
-    {0x0073u, 0x0151u},
-};
-/* Every other Taz animation: a standing pose with the arms down, the first
- * of these that is at least as long as Taz's own animation (so a play-once
- * animation can keep Taz's frame count without running past the donor
- * data). 0x001C (21 frames) is the stance the enemy plays most in its own
- * level; 0x013E (34) and 0x01C3 (71) are longer standing animations. The
- * earlier default 0x0018 is a 2-frame arms-out pose (the spread arms). */
-static const uint16_t kDonorDefaults[] = {0x001Cu, 0x013Eu, 0x01C3u};
-#define DONOR_DEFAULT_COUNT ((int)(sizeof(kDonorDefaults) / sizeof(kDonorDefaults[0])))
+/* The donor (file, actor type) and the role table: trca01_profile.h. */
 
 /* Animation timing fixes, kept in mod memory after the donor image (part of
  * savestates): word 0 = 0x80000000 (pending) | count, then two words per
@@ -220,7 +187,6 @@ static const uint16_t kDonorDefaults[] = {0x001Cu, 0x013Eu, 0x01C3u};
 #define FIX_TABLE_OFF   0x1F000u
 #define MAX_FIXES       256
 #define FIX_PENDING     0x80000000u
-#define TAZ_MAP_COUNT ((int)(sizeof(kTazToTrca01) / sizeof(kTazToTrca01[0])))
 /* Fixed reservation, so the savestate layout does not depend on the disc
  * read. The TRCA01 donor needs 93,920 bytes. */
 #define DONOR_RESERVE     0x20000u
@@ -251,9 +217,7 @@ static uint32_t g_donor_guest;     /* process-lifetime mod memory, 0 if none */
 
 /* ---- M3: textures ------------------------------------------------------ */
 #define ADDR_LEVEL_ID      0x80010000u  /* Bouze id of the current level */
-#define DONOR_LEVEL_ID     55u          /* TRCA01 (verified by level jump) */
 #define ADDR_LOAD_IMAGE    0x80071110u  /* PsyQ LoadImage core (RECT *a0, data *a1) */
-#define TAZ_MODEL_SUB      0x000Du      /* model kind of Taz's (and the donor's) body */
 /* Frame buffers live at x >= 512 (GPU state: display 512,0 / 512,256, draw
  * areas 512..1023), so new texels and CLUTs go left of that. */
 #define VRAM_TEXTURE_LIMIT 512
@@ -276,6 +240,14 @@ static VramMap* g_occ_level;       /* VRAM uploaded by the current level load */
 static int g_in_level_load;
 static DonorTexPool g_pool;        /* Taz's own VRAM in the level being loaded */
 static int g_pool_valid;
+
+/* The last relocation, reported by the debug command bbt.trca01 (tests).
+ * Written on the emulation thread at the end of a level load; the
+ * generation is odd while it is being written, and readers retry or give
+ * up then (tests read it between loads). */
+static DonorTexPlan g_last_plan;
+static volatile uint32_t g_last_plan_gen;
+static volatile uint32_t g_last_plan_level;
 
 static void count(const char* name, uint32_t n)
 {
@@ -423,8 +395,65 @@ static void relocate_textures(CPUState* cpu)
         for (uint32_t k = 0; k < 12u; k += 2u)
             psx_mod_write_half(g_donor_guest + r->off + k, (uint16_t)(out[k] | (out[k + 1] << 8)));
     }
+    ++g_last_plan_gen;
+    g_last_plan = plan;
+    g_last_plan_level = psx_mod_read_word(ADDR_LEVEL_ID);
+    ++g_last_plan_gen;
     count(PLUGIN_TRCA01 ".tex_relocated", 1);
     count(PLUGIN_TRCA01 ".tex_records_patched", (uint32_t)g_tex.record_count);
+}
+
+/* FNV-1a (32-bit) over pixels as little-endian bytes, the same as the
+ * tests compute over VRAM read back with vram_peek. */
+static uint32_t fnv1a_pixels(const uint16_t* px, uint32_t n)
+{
+    uint32_t h = 2166136261u;
+    for (uint32_t i = 0; i < n; ++i) {
+        h = (h ^ (uint8_t)px[i]) * 16777619u;
+        h = (h ^ (uint8_t)(px[i] >> 8)) * 16777619u;
+    }
+    return h;
+}
+
+/* Debug command (debug-server thread; reads only host state that is
+ * immutable once loaded, or the generation-guarded last plan):
+ *   "show"      donor and texture state, the last relocation's level
+ *   "group <n>" where group n's block and CLUT went, and FNV-1a hashes of
+ *               the pixels that were uploaded there. */
+static int trca01_command(const char* args, char* reply, int cap)
+{
+    if (args && strncmp(args, "group ", 6) == 0) {
+        const int g = atoi(args + 6);
+        if (!g_tex_ready || g < 0 || g >= g_tex.clut_count) {
+            snprintf(reply, (size_t)cap, "{\"ok\":false,\"err\":\"no such group\"}");
+            return 0;
+        }
+        const uint32_t gen = g_last_plan_gen;
+        const DonorTexPlan p = g_last_plan;
+        if (gen == 0 || (gen & 1u) || gen != g_last_plan_gen) {
+            snprintf(reply, (size_t)cap, "{\"ok\":false,\"err\":\"no relocation yet\"}");
+            return 0;
+        }
+        const DonorTexBlock* b = &g_tex.blocks[g];
+        snprintf(reply, (size_t)cap,
+                 "{\"ok\":true,\"group\":%d,\"src_clut\":%u,\"block\":[%u,%u,%u,%u],"
+                 "\"clut\":[%u,%u],\"tpage\":%u,\"du\":%d,\"dv\":%d,"
+                 "\"block_fnv\":\"%08X\",\"clut_fnv\":\"%08X\"}",
+                 g, g_tex.cluts[g], p.block_x[g], p.block_y[g], b->w, b->h, p.clut_x[g],
+                 p.clut_y[g], p.tpage[g], p.du[g], p.dv[g],
+                 fnv1a_pixels(g_tex.pixels + b->px, (uint32_t)b->w * b->h),
+                 fnv1a_pixels(g_tex.pixels + g_tex.clut_px + 16u * (uint32_t)g, 16u));
+        return 1;
+    }
+    const uint32_t gen = g_last_plan_gen;
+    snprintf(reply, (size_t)cap,
+             "{\"ok\":true,\"donor_state\":%d,\"donor\":\"0x%08X\",\"image_size\":%u,"
+             "\"models\":%d,\"anims\":%d,\"tex_ready\":%d,\"groups\":%d,\"records\":%d,"
+             "\"plan_gen\":%u,\"plan_level\":%u}",
+             g_donor_state, g_donor_guest, g_donor.image_size, g_donor.model_count,
+             g_donor.anim_count, g_tex_ready, g_tex_ready ? g_tex.clut_count : 0,
+             g_tex_ready ? g_tex.record_count : 0, gen, g_last_plan_level);
+    return 1;
 }
 
 /* Copy the donor image into mod memory. psx_mod_host_write_ram only
@@ -654,4 +683,5 @@ PSX_MOD_CONSTRUCTOR(register_bbt_third_character)
     (void)psx_mod_register_function_override(
         PLUGIN_TRCA01 ":load-image", ADDR_LOAD_IMAGE,
         load_image_wrap, kLoadImageGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_command("bbt.trca01", trca01_command);
 }
