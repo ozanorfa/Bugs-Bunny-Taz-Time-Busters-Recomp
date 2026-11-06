@@ -1,0 +1,48 @@
+{
+  "format_version": 1,
+  "game": {
+    "name": "BugsBunnyTaz",
+    "id": "SLUS-01144",
+    "boot_exe": "SLUS_011.44"
+  },
+  "marketing": {
+    "description": "",
+    "publisher": "",
+    "year": "",
+    "region": "USA",
+    "players": 2
+  },
+  "rom_identity": {
+    "cue_name": "BugsBunnyTaz_TimeBusters_USA.cue",
+    "bin_name": "BugsBunnyTaz_TimeBusters_USA.bin",
+    "track_counts": [
+      1
+    ],
+    "require_cue": true,
+    "data_track": {
+      "size": 678069840,
+      "md5": "03fd0dc4af76689e571eeac73721602c",
+      "sha1": "9beb05a6f61b4a64ca4548f9f7a48c5f4d0bdb3a",
+      "crc32": "22dd3004"
+    },
+    "disc_fp": "f01836c0f851a556686541ed5969411abfeb6c7c44539b729ca1975ffd267e06"
+  },
+  "exe": {
+    "load_address": "0x80010200",
+    "entry_pc": "0x80010208",
+    "text_size": "0x0007E000",
+    "stack_base": "0x801FFFF0"
+  },
+  "seeds": {
+    "count": 768,
+    "source": "boot_exe_jal"
+  },
+  "warnings": [
+    "cue has only 1 TRACK \u2014 Track-01-only dumps fail multi-track netplay/catalog gates; prefer a full Redump cue."
+  ],
+  "notes": [
+    "entry_pc/load_address/text_size/stack_base taken from PS-X EXE header.",
+    "seeds are first-pass boot-EXE JAL targets (+ entry); expect to grow as overlays / runtime paths are discovered.",
+    "required_disc_fp is psxrecomp-toc-v1 (matches runtime DiscIdentity)."
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "BugsBunnyTaz",
+  "system": "PS1",
+  "type": "recomp",
+  "toolchain": "psxrecomp",
+  "status": "exploring",
+  "project": "BugsBunnyTazRecomp",
+  "original": {
+    "region": "USA",
+    "serial": "SLUS-01144"
+  }
+}
