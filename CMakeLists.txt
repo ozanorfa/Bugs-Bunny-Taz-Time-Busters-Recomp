@@ -60,6 +60,7 @@ psxrecomp_add_game_runtime(psx-runtime
 target_sources(psx-runtime PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/third_character.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/donor.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/donor_tex.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/bouze.c")
 
 # Stage runtime configs next to the exe for direct build/ launches. Only copy

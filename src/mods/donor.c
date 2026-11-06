@@ -156,6 +156,33 @@ out:
     return ok;
 }
 
+int donor_find_model(const uint8_t* s, size_t len, uint32_t actor_type, uint16_t sub,
+                     uint32_t* off, uint32_t* size)
+{
+    uint8_t* ids = (uint8_t*)calloc(1, ID_BITMAP_BYTES);
+    if (!ids)
+        return 0;
+    int distinct = 0, found = 0;
+    if (collect_actor_ids(s, len, actor_type, ids, &distinct) > 0) {
+        size_t pos = 0;
+        BouzeRecord r;
+        while (!found && bouze_next_record(s, len, &pos, &r) == 1) {
+            if (r.kind != BOUZE_KIND_RESOURCE)
+                continue;
+            ResInfo ri;
+            resource_info(s, &r, &ri);
+            if (ri.has_id && ri.blob_tag == BOUZE_TAG_RES_MODEL && ri.sub == sub &&
+                id_has(ids, ri.id)) {
+                *off = bouze_u32(s + ri.blob_payload);
+                *size = bouze_u32(s + ri.blob_payload + 4);
+                found = 1;
+            }
+        }
+    }
+    free(ids);
+    return found;
+}
+
 void donor_free(Donor* d)
 {
     free(d->image);

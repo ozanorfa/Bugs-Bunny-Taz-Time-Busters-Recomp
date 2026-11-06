@@ -54,12 +54,29 @@
  * Host state: the donor image is a pure function of the disc and never
  * changes after it is loaded; the guest copy is rewritten on every load.
  * Status is visible through the debug server: {"cmd":"mod_counters"}.
+ *
+ * Milestone M3 (same feature): the donor's textures. Its model draws with
+ * texture page / CLUT positions of TRCA01's VRAM; elsewhere those hold the
+ * level's own textures. donor_tex.c rebuilds the donor's texels and CLUTs
+ * from TRCA01.BZZ the way the game uploads them. They go into Taz's own
+ * VRAM: the texel boxes and CLUT rows of his original model in the level
+ * being loaded (read from the type-4 chunk before his records are
+ * redirected), counting only VRAM this load really uploaded. A map of
+ * that is kept from the PsyQ LoadImage core (func_80071110, the only
+ * uploader below x = 512; checked from boot to gameplay). Free-looking
+ * VRAM is not used: the level's animated textures copy into VRAM no upload
+ * covers (seen in Granwich, which overwrote CLUTs placed there). After a
+ * patched load outside TRCA01 the pixels are uploaded
+ * (psx_mod_psyq_load_image) and the model's records pointed at them.
+ * Host state: the upload map and Taz's pool of the last load (rebuilt on
+ * every load; a savestate carries VRAM and the patched model together).
  */
 #include <stdint.h>
 #include <stdlib.h>
 
 #include "cpu_state.h"
 #include "donor.h"
+#include "donor_tex.h"
 #include "func_override.h"
 #include "mod_plugins.h"
 
@@ -176,6 +193,7 @@ static const DonorAnimMap kTazToTrca01[] = {
     {0x0033u, 0x01B1u},   /* run (loops while the pad is held) -> running stride */
     {0x0034u, 0x0145u},   /* stop after running (skid round) -> upright turning */
     {0x0036u, 0x01C9u},   /* jump -> leap through the air and land */
+    {0x0037u, 0x00E8u},   /* fall -> arms thrown up (instead of standing upright in the air) */
     {0x0039u, 0x014Bu},   /* land -> crouch low */
     /* Spin (square; triangle in the air). Spin start must carry a root
      * command (0xA00) so the game attaches the tornado: 0x01C6 (arm raised)
@@ -231,6 +249,40 @@ static int32_t g_scale = 0x1000 * DEFAULT_SIZE_PERCENT / 100;
 static int g_donor_state;          /* 0 = not loaded yet, 1 = ready, -1 = unusable */
 static uint32_t g_donor_guest;     /* process-lifetime mod memory, 0 if none */
 
+/* ---- M3: textures ------------------------------------------------------ */
+#define ADDR_LEVEL_ID      0x80010000u  /* Bouze id of the current level */
+#define DONOR_LEVEL_ID     55u          /* TRCA01 (verified by level jump) */
+#define ADDR_LOAD_IMAGE    0x80071110u  /* PsyQ LoadImage core (RECT *a0, data *a1) */
+#define TAZ_MODEL_SUB      0x000Du      /* model kind of Taz's (and the donor's) body */
+/* Frame buffers live at x >= 512 (GPU state: display 512,0 / 512,256, draw
+ * areas 512..1023), so new texels and CLUTs go left of that. */
+#define VRAM_TEXTURE_LIMIT 512
+/* Upload staging: pixels go to guest RAM below the stack pointer (unused
+ * at that moment), are uploaded synchronously and the bytes restored. */
+#define STAGE_GAP          0x100u
+#define STAGE_MAX          0x800u
+#define MAX_TAZ_MODEL      0x10000u     /* Taz's model blob is 11,528 bytes */
+#define GPR_A0 4
+#define GPR_SP 29
+
+/* addiu sp,sp,-0x30 / sw s1,0x14(sp) / move s1,a0 / sw s2,0x18(sp) */
+static const uint32_t kLoadImageGuard[4] = {
+    0x27BDFFD0u, 0xAFB10014u, 0x00808821u, 0xAFB20018u,
+};
+
+static DonorTex g_tex;             /* immutable once loaded */
+static int g_tex_ready;
+static VramMap* g_occ_level;       /* VRAM uploaded by the current level load */
+static int g_in_level_load;
+static DonorTexPool g_pool;        /* Taz's own VRAM in the level being loaded */
+static int g_pool_valid;
+
+static void count(const char* name, uint32_t n)
+{
+    psx_mod_counter_add(name, n);
+}
+
+
 static void trca01_load_donor(void)
 {
     if (g_donor_state != 0)
@@ -257,6 +309,14 @@ static void trca01_load_donor(void)
             psx_mod_counter_add(PLUGIN_TRCA01 ".spin_attach_node", (uint32_t)spin_node);
         else
             psx_mod_counter_add(PLUGIN_TRCA01 ".spin_unavailable", 1);
+        /* Textures: without them the donor keeps TRCA01's texture
+         * positions (right only in TRCA01): reported, not fatal. */
+        const DonorBlob* model = NULL;
+        for (int i = 0; i < g_donor.model_count; ++i)
+            if (g_donor.models[i].sub == TAZ_MODEL_SUB)
+                model = &g_donor.models[i];
+        g_tex_ready = model && donor_tex_extract(file, size, &g_donor, model, &g_tex);
+        psx_mod_counter_add(g_tex_ready ? PLUGIN_TRCA01 ".tex_ready" : PLUGIN_TRCA01 ".tex_unavailable", 1);
     } else {
         donor_free(&g_donor);
         g_donor_state = -1;
@@ -281,12 +341,90 @@ static void trca01_activate(void)
     trca01_read_size_option();
     if (!g_donor_guest)
         g_donor_guest = psx_mod_alloc_guest_memory(DONOR_RESERVE, 16);
+    if (!g_occ_level)
+        g_occ_level = (VramMap*)calloc(1, sizeof(VramMap));
     trca01_load_donor();
 }
 
-static void count(const char* name, uint32_t n)
+/* Wrap of the LoadImage core: record where the game puts pixels. */
+static int load_image_wrap(CPUState* cpu)
 {
-    psx_mod_counter_add(name, n);
+    const uint32_t rect = cpu->gpr[GPR_A0];
+    if (g_in_level_load && g_occ_level && in_main_ram(rect) && in_main_ram(rect + 7u))
+        vram_map_mark(g_occ_level, (int16_t)psx_mod_read_half(rect),
+                      (int16_t)psx_mod_read_half(rect + 2u), (int16_t)psx_mod_read_half(rect + 4u),
+                      (int16_t)psx_mod_read_half(rect + 6u));
+    func_override_call_original(cpu);
+    return 1;
+}
+
+/* Upload w*h pixels to VRAM (x, y) from a staging area below the guest
+ * stack pointer; the staged bytes are restored afterwards. */
+static int upload_rect(uint32_t sp, int x, int y, int w, int h, const uint16_t* px)
+{
+    const uint32_t n = (uint32_t)(w * h);
+    const uint32_t bytes = (n * 2u + 3u) & ~3u;
+    if (n == 0 || bytes > STAGE_MAX || sp < 0x80000000u + STAGE_GAP + bytes)
+        return 0;
+    const uint32_t base = (sp - STAGE_GAP - bytes) & ~3u;
+    if (!in_main_ram(base) || !in_main_ram(base + bytes - 1u))
+        return 0;
+    uint32_t saved[STAGE_MAX / 4u];
+    for (uint32_t i = 0; i < bytes / 4u; ++i) {
+        saved[i] = psx_mod_read_word(base + 4u * i);
+        const uint32_t lo = px[2u * i];
+        const uint32_t hi = 2u * i + 1u < n ? px[2u * i + 1u] : 0u;
+        psx_mod_write_word(base + 4u * i, lo | (hi << 16));
+    }
+    const int ok = psx_mod_psyq_load_image((uint32_t)x, (uint32_t)y, (uint32_t)w,
+                                           (uint32_t)h, base);
+    for (uint32_t i = 0; i < bytes / 4u; ++i)
+        psx_mod_write_word(base + 4u * i, saved[i]);
+    return ok;
+}
+
+/* After a patched load outside the donor's level: put the donor's texels
+ * and CLUTs into Taz's own VRAM and point the model's records at them. */
+static void relocate_textures(CPUState* cpu)
+{
+    if (!g_tex_ready || !g_occ_level || !g_donor_guest)
+        return;
+    if (psx_mod_read_word(ADDR_LEVEL_ID) == DONOR_LEVEL_ID) {
+        count(PLUGIN_TRCA01 ".tex_native_level", 1);
+        return;
+    }
+    if (!g_pool_valid) {
+        count(PLUGIN_TRCA01 ".tex_no_pool", 1);
+        return;
+    }
+    DonorTexPlan plan;
+    if (!donor_tex_plan(&g_tex, &g_pool, g_occ_level, &plan)) {
+        count(PLUGIN_TRCA01 ".tex_no_space", 1);
+        return;                    /* model keeps TRCA01's texture fields */
+    }
+    const uint32_t sp = cpu->gpr[GPR_SP];
+    int failed = 0;
+    for (int i = 0; i < g_tex.block_count; ++i) {
+        const DonorTexBlock* b = &g_tex.blocks[i];
+        failed += !upload_rect(sp, plan.block_x[i], plan.block_y[i], b->w, b->h,
+                               g_tex.pixels + b->px);
+    }
+    for (int g = 0; g < g_tex.clut_count; ++g)
+        failed += !upload_rect(sp, plan.clut_x[g], plan.clut_y[g], 16, 1,
+                               g_tex.pixels + g_tex.clut_px + 16u * (uint32_t)g);
+    if (failed) {
+        count(PLUGIN_TRCA01 ".tex_upload_failed", (uint32_t)failed);
+        return;
+    }
+    for (int i = 0; i < g_tex.record_count; ++i) {
+        const DonorTexRecord* r = &g_tex.records[i];
+        uint8_t out[12];
+        donor_tex_patch_record(&g_tex, &plan, r, g_donor.image + r->off, out);
+        for (uint32_t k = 0; k < 12u; k += 2u)
+            psx_mod_write_half(g_donor_guest + r->off + k, (uint16_t)(out[k] | (out[k + 1] << 8)));
+    }
+    count(PLUGIN_TRCA01 ".tex_relocated", 1);
+    count(PLUGIN_TRCA01 ".tex_records_patched", (uint32_t)g_tex.record_count);
 }
 
 /* Copy the donor image into mod memory. psx_mod_host_write_ram only
@@ -377,6 +515,22 @@ static int bouze_decompress_wrap(CPUState* cpu)
     for (; i < len; ++i)
         s[i] = psx_mod_read_byte(stream_base + i);
 
+    /* Taz's own model, still unredirected, gives the VRAM his textures use
+     * in this level: the pool the donor's textures go to (M3). */
+    g_pool_valid = 0;
+    uint32_t moff = 0, msize = 0;
+    if (g_tex_ready && donor_find_model(s, len, TYPE_TAZ, TAZ_MODEL_SUB, &moff, &msize) &&
+        msize >= 12u && msize <= MAX_TAZ_MODEL && in_main_ram(blob_base + moff) &&
+        in_main_ram(blob_base + moff + msize - 1u)) {
+        uint8_t* m = (uint8_t*)malloc(msize);
+        if (m) {
+            for (uint32_t k = 0; k < msize; ++k)
+                m[k] = psx_mod_read_byte(blob_base + moff + k);
+            g_pool_valid = donor_tex_pool_from_model(m, msize, &g_pool);
+            free(m);
+        }
+    }
+
     DonorWrite changed[MAX_PATCHED];
     DonorAnimFix fixes[MAX_FIXES];
     int fix_count = 0;
@@ -458,7 +612,12 @@ static int apply_anim_fixes_in_list(uint32_t list_head, uint32_t table, uint32_t
 
 static int trca01_level_load_wrap(CPUState* cpu)
 {
+    /* Uploads seen from here on belong to this level's VRAM layout. */
+    if (g_occ_level)
+        vram_map_clear(g_occ_level);
+    g_in_level_load = 1;
     func_override_call_original(cpu);
+    g_in_level_load = 0;
     if (cpu->gpr[GPR_V0] != 0 || !g_donor_guest)
         return 1;
     const uint32_t table = g_donor_guest + FIX_TABLE_OFF;
@@ -473,6 +632,7 @@ static int trca01_level_load_wrap(CPUState* cpu)
     }
     psx_mod_write_word(table, n_fixes);
     count(PLUGIN_TRCA01 ".anim_records_fixed", (uint32_t)fixed);
+    relocate_textures(cpu);
     return 1;
 }
 
@@ -491,4 +651,7 @@ PSX_MOD_CONSTRUCTOR(register_bbt_third_character)
     (void)psx_mod_register_function_override(
         PLUGIN_TRCA01 ":level-load", ADDR_LEVEL_LOAD_PARSE,
         trca01_level_load_wrap, kLevelLoadParseGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(
+        PLUGIN_TRCA01 ":load-image", ADDR_LOAD_IMAGE,
+        load_image_wrap, kLoadImageGuard, 4, FO_CREDIT_SELF);
 }

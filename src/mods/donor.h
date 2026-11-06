@@ -44,6 +44,12 @@ int donor_extract(const uint8_t* file, size_t file_len, uint32_t actor_type,
                   Donor* out);
 void donor_free(Donor* d);
 
+/* Find, in a decompressed record stream, the model resource of kind `sub`
+ * referenced by actors of `actor_type`: its blob offset (relative to the
+ * type-4 chunk) and size. Returns 1 if found. */
+int donor_find_model(const uint8_t* s, size_t len, uint32_t actor_type, uint16_t sub,
+                     uint32_t* off, uint32_t* size);
+
 /* Append a synthetic spin animation with id `sub` (`frames` keyframes) to
  * the donor. Taz's spin draws a tornado: a separate actor the game attaches
  * at the node his spin animations name with the root command (0xA00, actor
