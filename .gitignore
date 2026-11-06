@@ -99,3 +99,6 @@ starvation_dump.jsonl
 !/disc_probe.*.json
 !/disc_set.json
 !/.recomp.json
+
+# Local 3-player test config (Phase 4; same local disc path as game.toml)
+/game_3p.toml

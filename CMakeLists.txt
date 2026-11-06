@@ -37,6 +37,11 @@ if(NOT IS_DIRECTORY "${PSX_PRELOADED_MODS}")
     set(PSX_PRELOADED_MODS "NONE")
 endif()
 
+# Controller seats compiled in. 2 = the game's two ports. Phase 4 (third
+# player) builds with 5: one SCPH-1070 multitap plus the opposite port's pad
+# (PSX_MAX_PLAYERS >= 5 is what enables the runtime's multitap and seat 3).
+set(BBT_MAX_PLAYERS 2 CACHE STRING "Controller seats compiled into the runtime")
+
 psxrecomp_add_game_runtime(psx-runtime
     PRELOADED_MODS_DIR "${PSX_PRELOADED_MODS}"
     # ENABLE_NETPLAY_IF_PRESENT
@@ -44,7 +49,7 @@ psxrecomp_add_game_runtime(psx-runtime
     ENABLE_SETUP_WIZARD
     WINDOW_TITLE "BugsBunnyTaz Recompiled"
     DEFAULT_GAME_CONFIG_PATH "game.toml"
-    MAX_PLAYERS 2
+    MAX_PLAYERS ${BBT_MAX_PLAYERS}
     # LAUNCHER_BOXART "${CMAKE_CURRENT_SOURCE_DIR}/launcher_assets/img/boxart.tga"
     APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/assets/psxrecomp.ico"
     # Committed game C (psxrecomp_cli.py generate; git add generated). Release
@@ -61,6 +66,7 @@ target_sources(psx-runtime PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/third_character.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/donor.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/donor_tex.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/third_player.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/bouze.c")
 
 # Stage runtime configs next to the exe for direct build/ launches. Only copy

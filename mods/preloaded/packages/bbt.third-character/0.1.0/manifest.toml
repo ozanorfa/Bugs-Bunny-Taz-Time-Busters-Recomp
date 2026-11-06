@@ -1,6 +1,7 @@
 # Third character mod (Phase 3, in development).
 # Selects the trusted plugin compiled into this game from
-# src/mods/third_character.c. This package contains no game data.
+# src/mods/third_character.c and src/mods/third_player.c. This package
+# contains no game data.
 format_version = 11
 id = "bbt.third-character"
 version = "0.1.0"
@@ -26,7 +27,7 @@ id = "bbt.third-character.swap-test"
 [[feature]]
 id = "trca01"
 name = "Taz becomes the Transylvania enemy"
-description = "In development. In 2-player mode, Taz is drawn with the model and animations of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ) when the game starts. Taz's controls and behaviour are unchanged. Standing, running and jumping use the enemy's own animations; other moves show its standing pose for now, and textures are only fully right inside that level. Do not combine with the swap test."
+description = "In development. In 2-player mode, Taz is drawn with the model, animations and textures of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ) when the game starts. Taz's controls and behaviour are unchanged. Standing, running, jumping, falling, landing and the spin (with its tornado) use matching enemy animations; a few other moves show a standing pose. Do not combine with the swap test."
 group = "Third character (in development)"
 default_enabled = false
 
@@ -56,3 +57,14 @@ label = "75% (about Bugs' height)"
 [[option.choice]]
 value = "65"
 label = "65%"
+
+[[feature]]
+id = "p3"
+name = "Third player (Phase 4, step 0: input only)"
+description = "Developer test. Reads a third controller (seat 3) every frame through the same path netplay synchronizes. Needs a build with 5 controller seats and a 3-player game.toml (multitap on port 2). Nothing is visible in the game yet."
+group = "Third character (in development)"
+default_enabled = false
+
+[[plugin]]
+feature = "p3"
+id = "bbt.third-character.p3"
