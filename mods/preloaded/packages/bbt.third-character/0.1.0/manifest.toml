@@ -26,10 +26,33 @@ id = "bbt.third-character.swap-test"
 [[feature]]
 id = "trca01"
 name = "Taz becomes the Transylvania enemy"
-description = "Milestone M2 (in development). In 2-player mode, Taz is drawn with the model and animations of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ) when the game starts. Taz's controls and behaviour are unchanged. Known limits: textures are only right inside that level, and moves the enemy has no animation for show its standing pose. Do not combine with the swap test."
+description = "In development. In 2-player mode, Taz is drawn with the model and animations of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ) when the game starts. Taz's controls and behaviour are unchanged. Standing, running and jumping use the enemy's own animations; other moves show its standing pose for now, and textures are only fully right inside that level. Do not combine with the swap test."
 group = "Third character (in development)"
 default_enabled = false
 
 [[plugin]]
 feature = "trca01"
 id = "bbt.third-character.trca01"
+
+[[option]]
+feature = "trca01"
+id = "size"
+label = "Size"
+type = "choice"
+default = "75"
+
+[[option.choice]]
+value = "100"
+label = "100% (the enemy's own size)"
+
+[[option.choice]]
+value = "85"
+label = "85%"
+
+[[option.choice]]
+value = "75"
+label = "75% (about Bugs' height)"
+
+[[option.choice]]
+value = "65"
+label = "65%"

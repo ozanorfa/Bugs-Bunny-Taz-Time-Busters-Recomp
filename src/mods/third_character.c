@@ -160,9 +160,34 @@ static int level_load_parse_wrap(CPUState* cpu)
 
 #define DONOR_FILE        "LEVEL5/TRCA01.BZZ"
 #define DONOR_ACTOR_TYPE  0x01008381u
-/* Used for Taz animation ids the donor does not have: the donor's
- * standing animation (until M4 maps animations by role). */
-#define DONOR_FALLBACK_ANIM 0x0018u
+/* Taz animation id -> donor animation id, by role. Animation ids are per
+ * character (equal numbers mean nothing), so every entry comes from
+ * watching the donor's animations played on Taz (52-animation survey and
+ * filmstrips in Granwich, 2026-11-06; NOTES.md "M2"). */
+static const DonorAnimMap kTazToTrca01[] = {
+    /* Set-up animation every character plays first: its keyframe commands
+     * push the actor's draw node (+0x9C). Without it the model is never
+     * drawn. */
+    {0x0001u, 0x0001u},
+    {0x0033u, 0x01B1u},   /* run -> crouched running stride (6-frame loop) */
+    {0x0036u, 0x01C9u},   /* jump -> leap through the air and land */
+};
+/* Every other Taz animation: a standing pose with the arms down, the first
+ * of these that is at least as long as Taz's own animation (so a play-once
+ * animation can keep Taz's frame count without running past the donor
+ * data). 0x001C (21 frames) is the stance the enemy plays most in its own
+ * level; 0x013E (34) and 0x01C3 (71) are longer standing animations. The
+ * earlier default 0x0018 is a 2-frame arms-out pose (the spread arms). */
+static const uint16_t kDonorDefaults[] = {0x001Cu, 0x013Eu, 0x01C3u};
+#define DONOR_DEFAULT_COUNT ((int)(sizeof(kDonorDefaults) / sizeof(kDonorDefaults[0])))
+
+/* Play-once fixes, kept in mod memory after the donor image (part of
+ * savestates): word 0 = 0x80000000 (pending) | count, then two words per
+ * fix: res_id | frames << 16, mode. Applied after Level_LoadParse. */
+#define FIX_TABLE_OFF   0x1F000u
+#define MAX_FIXES       256
+#define FIX_PENDING     0x80000000u
+#define TAZ_MAP_COUNT ((int)(sizeof(kTazToTrca01) / sizeof(kTazToTrca01[0])))
 /* Fixed reservation, so the savestate layout does not depend on the disc
  * read. The TRCA01 donor needs 93,920 bytes. */
 #define DONOR_RESERVE     0x20000u
@@ -181,7 +206,13 @@ static const uint32_t kBouzeDecompressGuard[4] = {
     0xACDF0000u, 0xACD00008u, 0xACD1000Cu, 0xACD20010u,
 };
 
+/* Size option ("size" in the manifest): percent of the enemy's own size.
+ * Read once at activation; the scale goes into Taz's actor records so the
+ * loader sets actor +0xEC/+0xEE/+0xF0 itself. */
+#define DEFAULT_SIZE_PERCENT 75
+
 static Donor g_donor;              /* immutable once loaded */
+static int32_t g_scale = 0x1000 * DEFAULT_SIZE_PERCENT / 100;
 static int g_donor_state;          /* 0 = not loaded yet, 1 = ready, -1 = unusable */
 static uint32_t g_donor_guest;     /* process-lifetime mod memory, 0 if none */
 
@@ -198,7 +229,7 @@ static void trca01_load_donor(void)
     uint32_t got = 0;
     if (psx_mod_read_disc_file(DONOR_FILE, file, size, &got) && got == size &&
         donor_extract(file, size, DONOR_ACTOR_TYPE, &g_donor) &&
-        g_donor.image_size <= DONOR_RESERVE)
+        g_donor.image_size <= FIX_TABLE_OFF)
         g_donor_state = 1;
     else {
         donor_free(&g_donor);
@@ -207,8 +238,21 @@ static void trca01_load_donor(void)
     free(file);
 }
 
+static void trca01_read_size_option(void)
+{
+    char v[16];
+    int pct = DEFAULT_SIZE_PERCENT;
+    if (psx_mod_option_value("bbt.third-character", "trca01", "size", v, sizeof v)) {
+        const int p = atoi(v);
+        if (p >= 25 && p <= 150)
+            pct = p;
+    }
+    g_scale = 0x1000 * pct / 100;
+}
+
 static void trca01_activate(void)
 {
+    trca01_read_size_option();
     if (!g_donor_guest)
         g_donor_guest = psx_mod_alloc_guest_memory(DONOR_RESERVE, 16);
     trca01_load_donor();
@@ -229,6 +273,17 @@ static void write_donor_image(void)
         psx_mod_write_word(g_donor_guest + i,
                            (uint32_t)p[i] | ((uint32_t)p[i + 1] << 8) |
                            ((uint32_t)p[i + 2] << 16) | ((uint32_t)p[i + 3] << 24));
+}
+
+/* Reads the replaced character's own blob header from the type-4 chunk. */
+static int read_target_header(void* ctx, uint32_t blob_off, uint8_t out[8])
+{
+    const uint32_t a = *(const uint32_t*)ctx + blob_off;
+    if (!in_main_ram(a) || !in_main_ram(a + 7u))
+        return 0;
+    for (uint32_t i = 0; i < 8; ++i)
+        out[i] = psx_mod_read_byte(a + i);
+    return 1;
 }
 
 /* Wrap of Bouze_Decompress(src, dst, work): runs the original unchanged;
@@ -296,31 +351,102 @@ static int bouze_decompress_wrap(CPUState* cpu)
     for (; i < len; ++i)
         s[i] = psx_mod_read_byte(stream_base + i);
 
-    size_t changed[MAX_PATCHED];
+    DonorWrite changed[MAX_PATCHED];
+    DonorAnimFix fixes[MAX_FIXES];
+    int fix_count = 0;
     DonorPatchStats st;
-    const int n = donor_patch_stream(s, len, TYPE_TAZ, &g_donor, g_donor_guest,
-                                     blob_base, DONOR_FALLBACK_ANIM, changed,
-                                     MAX_PATCHED, &st);
+    uint32_t base_ctx = blob_base;
+    int n = donor_patch_stream(s, len, TYPE_TAZ, &g_donor, g_donor_guest,
+                               blob_base, kTazToTrca01, TAZ_MAP_COUNT,
+                               kDonorDefaults, DONOR_DEFAULT_COUNT,
+                               read_target_header, &base_ctx, changed,
+                               MAX_PATCHED, fixes, MAX_FIXES, &fix_count, &st);
+    const int blobs = n;
+    if (n > 0)
+        n = donor_patch_actor_scale(s, len, TYPE_TAZ, g_scale, changed, n,
+                                    MAX_PATCHED);
     if (n < 0) {
         count(PLUGIN_TRCA01 ".stream_rejected", 1);
     } else if (n > 0) {
         /* Donor first, then the records that point at it. */
         write_donor_image();
+        const uint32_t table = g_donor_guest + FIX_TABLE_OFF;
+        for (int k = 0; k < fix_count; ++k) {
+            psx_mod_write_word(table + 4u + 8u * (uint32_t)k,
+                               (uint32_t)fixes[k].res_id | ((uint32_t)fixes[k].frames << 16));
+            psx_mod_write_word(table + 8u + 8u * (uint32_t)k, fixes[k].mode);
+        }
+        psx_mod_write_word(table, FIX_PENDING | (uint32_t)fix_count);
         int failed = 0;
         for (int k = 0; k < n; ++k)
-            if (!psx_mod_host_write_ram(stream_base + (uint32_t)changed[k],
-                                        s + changed[k], 8))
+            if (!psx_mod_host_write_ram(stream_base + (uint32_t)changed[k].off,
+                                        s + changed[k].off, changed[k].len))
                 ++failed;
         if (failed)
             count(PLUGIN_TRCA01 ".record_write_failed", (uint32_t)failed);
         count(PLUGIN_TRCA01 ".loads_patched", 1);
         count(PLUGIN_TRCA01 ".models_patched", (uint32_t)st.models);
-        count(PLUGIN_TRCA01 ".anims_same_id", (uint32_t)st.anims_same);
-        count(PLUGIN_TRCA01 ".anims_fallback", (uint32_t)st.anims_fallback);
+        count(PLUGIN_TRCA01 ".anims_mapped", (uint32_t)st.anims_mapped);
+        count(PLUGIN_TRCA01 ".anims_default", (uint32_t)st.anims_default);
+        count(PLUGIN_TRCA01 ".scale_records", (uint32_t)(n - blobs));
     } else {
         count(PLUGIN_TRCA01 ".no_taz_in_level", 1);
     }
     free(s);
+    return 1;
+}
+
+/* Apply the play-once fixes to the animation records the loader built for
+ * Taz: record +0x08 = frame count, +0x0B = mode. Runs after a successful
+ * Level_LoadParse of a load that was patched (table pending). */
+static int apply_anim_fixes_in_list(uint32_t list_head, uint32_t table, uint32_t count)
+{
+    int fixed = 0;
+    uint32_t p = psx_mod_read_word(list_head);
+    for (int a = 0; in_main_ram(p) && a < MAX_ACTORS_PER_LIST; ++a) {
+        if (psx_mod_read_word(p + ACTOR_OFF_TYPE) == TYPE_TAZ) {
+            uint32_t node = psx_mod_read_word(p + ACTOR_OFF_RES);
+            for (int k = 0; in_main_ram(node) && k < 512; ++k) {
+                const uint32_t e = psx_mod_read_word(node + 8u);
+                if (in_main_ram(e) && psx_mod_read_half(e + 8u) == 4u) {
+                    const uint16_t id = psx_mod_read_half(e + 6u);
+                    const uint32_t rec = psx_mod_read_word(e + 0x18u);
+                    for (uint32_t f = 0; f < count && in_main_ram(rec); ++f) {
+                        const uint32_t w = psx_mod_read_word(table + 4u + 8u * f);
+                        if ((uint16_t)w != id)
+                            continue;
+                        psx_mod_write_half(rec + 8u, (uint16_t)(w >> 16));
+                        psx_mod_write_byte(rec + 0xBu,
+                                           (uint8_t)psx_mod_read_word(table + 8u + 8u * f));
+                        ++fixed;
+                        break;
+                    }
+                }
+                node = psx_mod_read_word(node);
+            }
+        }
+        p = psx_mod_read_word(p + ACTOR_OFF_NEXT);
+    }
+    return fixed;
+}
+
+static int trca01_level_load_wrap(CPUState* cpu)
+{
+    func_override_call_original(cpu);
+    if (cpu->gpr[GPR_V0] != 0 || !g_donor_guest)
+        return 1;
+    const uint32_t table = g_donor_guest + FIX_TABLE_OFF;
+    const uint32_t head = psx_mod_read_word(table);
+    if ((head & FIX_PENDING) == 0)
+        return 1;
+    const uint32_t n_fixes = head & 0xFFFFu;
+    int fixed = 0;
+    if (n_fixes <= MAX_FIXES) {
+        fixed += apply_anim_fixes_in_list(ADDR_ACTOR_LIST_DEFS, table, n_fixes);
+        fixed += apply_anim_fixes_in_list(ADDR_ACTOR_LIST_PLACED, table, n_fixes);
+    }
+    psx_mod_write_word(table, n_fixes);
+    count(PLUGIN_TRCA01 ".anim_records_fixed", (uint32_t)fixed);
     return 1;
 }
 
@@ -334,4 +460,9 @@ PSX_MOD_CONSTRUCTOR(register_bbt_third_character)
     (void)psx_mod_register_function_override(
         PLUGIN_TRCA01 ":bouze-data", ADDR_BOUZE_DECOMPRESS,
         bouze_decompress_wrap, kBouzeDecompressGuard, 4, FO_CREDIT_SELF);
+    /* Same address as the swap test's wrap: only one of the two features
+     * may be enabled at a time. */
+    (void)psx_mod_register_function_override(
+        PLUGIN_TRCA01 ":level-load", ADDR_LEVEL_LOAD_PARSE,
+        trca01_level_load_wrap, kLevelLoadParseGuard, 4, FO_CREDIT_SELF);
 }

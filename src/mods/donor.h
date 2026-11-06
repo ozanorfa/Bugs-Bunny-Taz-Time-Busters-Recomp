@@ -24,6 +24,8 @@ typedef struct DonorBlob {
     uint16_t id;      /* tag 0x27 high half: resource id in the source file */
     uint32_t off;     /* offset inside Donor.image */
     uint32_t size;
+    uint16_t frames;  /* animations: header u16 [4] (frame count) */
+    uint8_t mode;     /* animations: header [2] >> 1 (1 = play once, 2 = loop) */
 } DonorBlob;
 
 typedef struct Donor {
@@ -42,12 +44,38 @@ int donor_extract(const uint8_t* file, size_t file_len, uint32_t actor_type,
                   Donor* out);
 void donor_free(Donor* d);
 
+/* Which donor animation plays for one animation id of the replaced
+ * character. Animation ids are per character (the same number means a
+ * different move for another character), so roles are mapped explicitly. */
+typedef struct DonorAnimMap {
+    uint16_t target_sub;  /* animation id the replaced character asks for */
+    uint16_t donor_sub;   /* donor animation id played instead */
+} DonorAnimMap;
+
+/* Post-load correction of one animation record (the 16-byte record the
+ * loader builds from the blob header): +0x08 frame count, +0x0B mode. */
+typedef struct DonorAnimFix {
+    uint16_t res_id;      /* resource id (entry +0x06) of the record */
+    uint16_t frames;
+    uint8_t mode;
+} DonorAnimFix;
+
+/* Reads the 8-byte header of the replaced character's own blob at
+ * `blob_off` (relative to the level's type-4 chunk). Returns 1 on success. */
+typedef int (*DonorTargetHeaderFn)(void* ctx, uint32_t blob_off, uint8_t out[8]);
+
+/* One rewritten span of the record stream (offset, length). */
+typedef struct DonorWrite {
+    size_t off;
+    uint32_t len;
+} DonorWrite;
+
 typedef struct DonorPatchStats {
     int actor_records;    /* records of the replaced character */
     int resource_ids;     /* distinct resource ids they reference */
     int models;           /* model payloads rewritten */
-    int anims_same;       /* animation payloads given the same anim id */
-    int anims_fallback;   /* animation payloads given the fallback anim */
+    int anims_mapped;     /* animation payloads given a mapped animation */
+    int anims_default;    /* animation payloads given the default animation */
     int other;            /* referenced records with neither blob tag */
 } DonorPatchStats;
 
@@ -56,17 +84,36 @@ typedef struct DonorPatchStats {
  * `s`, so they point into the donor image located at guest address
  * `image_addr` (payload offsets are relative to `blob_base`, the RAM
  * address of the level's type-4 chunk, which the loader adds them to). A
- * model keeps its sub kind if the donor has one of the same kind (else the donor's first model); an animation
- * gets the donor animation with the same id, else `fallback_sub`, else the
- * donor's first animation. Tag 0x27 is never changed, so the character's
- * script still finds every animation id it asks for.
- * The stream offset of each rewritten 8-byte payload is stored in
- * `changed` (up to `cap`). Returns the number of payloads rewritten, or
+ * model keeps its sub kind if the donor has one of the same kind (else the
+ * donor's first model); an animation with id S gets the donor animation
+ * `map[i].donor_sub` where `map[i].target_sub == S`, else the first of
+ * `defaults` that has at least as many frames as the replaced animation
+ * (read through `read_hdr`), else the longest of `defaults`. Tag 0x27 is
+ * never changed, so the character's script still finds every animation id
+ * it asks for.
+ * The replaced character's state machine waits for its play-once
+ * animations to end, so for each of those a fix is emitted that gives the
+ * record the original's frame count (capped at the donor's, so the donor
+ * data is never read past its end) and the play-once mode.
+ * Each rewritten payload is stored in `changed` (up to `cap`). Returns the
+ * number of payloads rewritten, or
  * -1 on a malformed stream or when more than `cap` would change (then
  * nothing is guaranteed about `s`; the caller must not write it back). */
 int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
                        const Donor* d, uint32_t image_addr, uint32_t blob_base,
-                       uint16_t fallback_sub, size_t* changed, int cap,
+                       const DonorAnimMap* map, int map_count,
+                       const uint16_t* defaults, int default_count,
+                       DonorTargetHeaderFn read_hdr, void* ctx,
+                       DonorWrite* changed, int cap,
+                       DonorAnimFix* fixes, int fix_cap, int* fix_count,
                        DonorPatchStats* stats);
+
+/* Set the scale (tag 0x12: three 32-bit values the loader stores as s16 at
+ * actor +0xEC / +0xEE / +0xF0; 0x1000 = 1.0, verified by changing it in
+ * RAM) of every actor record of `target_type` in the stream, in place.
+ * Appends the rewritten payloads to `changed` starting at index `n`.
+ * Returns the new count, or -1 on a malformed stream / full list. */
+int donor_patch_actor_scale(uint8_t* s, size_t len, uint32_t target_type,
+                            int32_t scale, DonorWrite* changed, int n, int cap);
 
 #endif /* BBT_DONOR_H */

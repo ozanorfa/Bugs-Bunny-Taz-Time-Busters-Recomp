@@ -73,6 +73,7 @@ int bouze_next_tag(const uint8_t* s, const BouzeRecord* r, size_t* pos, BouzeTag
 #define BOUZE_KIND_RESOURCE 0x22u
 #define BOUZE_TAG_ACTOR_HEADER 0x16u
 #define BOUZE_TAG_ACTOR_RESOURCE 0x0Fu
+#define BOUZE_TAG_ACTOR_SCALE 0x12u
 #define BOUZE_TAG_RES_ID 0x27u
 #define BOUZE_TAG_RES_MODEL 0x24u
 #define BOUZE_TAG_RES_ANIM 0x25u

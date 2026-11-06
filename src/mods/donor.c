@@ -131,6 +131,8 @@ int donor_extract(const uint8_t* file, size_t file_len, uint32_t actor_type,
             b->id = ri.id;
             b->off = (uint32_t)at;
             b->size = size;
+            b->frames = size >= 8 ? bouze_u16(data + off + 4) : 0;
+            b->mode = size >= 8 ? (uint8_t)(data[off + 2] >> 1) : 0;
             if (pass == 1)
                 memcpy(out->image + at, data + off, size);
             at = (at + size + 3u) & ~(size_t)3u;
@@ -178,10 +180,15 @@ static void put_u32(uint8_t* p, uint32_t v)
 
 int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
                        const Donor* d, uint32_t image_addr, uint32_t blob_base,
-                       uint16_t fallback_sub, size_t* changed, int cap,
+                       const DonorAnimMap* map, int map_count,
+                       const uint16_t* defaults, int default_count,
+                       DonorTargetHeaderFn read_hdr, void* ctx,
+                       DonorWrite* changed, int cap,
+                       DonorAnimFix* fixes, int fix_cap, int* fix_count,
                        DonorPatchStats* st)
 {
     memset(st, 0, sizeof(*st));
+    *fix_count = 0;
     if (!d->image || d->model_count == 0)
         return -1;
     uint8_t* ids = (uint8_t*)calloc(1, ID_BITMAP_BYTES);
@@ -212,14 +219,43 @@ int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
                 b = &d->models[0];
             ++st->models;
         } else if (ri.blob_tag == BOUZE_TAG_RES_ANIM && d->anim_count > 0) {
-            b = find_sub(d->anims, d->anim_count, ri.sub);
+            uint8_t hdr[8];
+            const uint32_t own_off = bouze_u32(s + ri.blob_payload);
+            if (!read_hdr(ctx, own_off, hdr)) {
+                n = -1;
+                goto out;
+            }
+            const uint16_t own_frames = bouze_u16(hdr + 4);
+            const uint8_t own_mode = (uint8_t)(hdr[2] >> 1);
+            for (int m = 0; m < map_count && !b; ++m)
+                if (map[m].target_sub == ri.sub)
+                    b = find_sub(d->anims, d->anim_count, map[m].donor_sub);
             if (b) {
-                ++st->anims_same;
+                ++st->anims_mapped;
             } else {
-                b = find_sub(d->anims, d->anim_count, fallback_sub);
+                const DonorBlob* longest = NULL;
+                for (int k2 = 0; k2 < default_count && !b; ++k2) {
+                    const DonorBlob* c = find_sub(d->anims, d->anim_count, defaults[k2]);
+                    if (!c)
+                        continue;
+                    if (c->frames >= own_frames)
+                        b = c;
+                    else if (!longest || c->frames > longest->frames)
+                        longest = c;
+                }
                 if (!b)
-                    b = &d->anims[0];
-                ++st->anims_fallback;
+                    b = longest ? longest : &d->anims[0];
+                ++st->anims_default;
+            }
+            if (own_mode == 1) {
+                if (*fix_count >= fix_cap) {
+                    n = -1;
+                    goto out;
+                }
+                DonorAnimFix* f = &fixes[(*fix_count)++];
+                f->res_id = ri.id;
+                f->frames = own_frames < b->frames ? own_frames : b->frames;
+                f->mode = 1;
             }
         } else {
             ++st->other;
@@ -232,11 +268,47 @@ int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
         /* The loader computes base + offset with 32-bit wrap (MIPS addu). */
         put_u32(s + ri.blob_payload, image_addr + b->off - blob_base);
         put_u32(s + ri.blob_payload + 4, b->size);
-        changed[n++] = ri.blob_payload;
+        changed[n].off = ri.blob_payload;
+        changed[n].len = 8;
+        ++n;
     }
     if (k != 0)
         n = -1;
 out:
     free(ids);
     return n;
+}
+
+int donor_patch_actor_scale(uint8_t* s, size_t len, uint32_t target_type,
+                            int32_t scale, DonorWrite* changed, int n, int cap)
+{
+    size_t pos = 0;
+    BouzeRecord r;
+    int k;
+    while ((k = bouze_next_record(s, len, &pos, &r)) == 1) {
+        if (!bouze_is_actor_kind(r.kind))
+            continue;
+        size_t tp = r.tags;
+        BouzeTag t;
+        int is_target = 0;
+        while (bouze_next_tag(s, &r, &tp, &t))
+            if (t.tag == BOUZE_TAG_ACTOR_HEADER && t.len == 28 &&
+                bouze_u32(s + t.payload) == target_type)
+                is_target = 1;
+        if (!is_target)
+            continue;
+        tp = r.tags;
+        while (bouze_next_tag(s, &r, &tp, &t)) {
+            if (t.tag != BOUZE_TAG_ACTOR_SCALE || t.len != 12)
+                continue;
+            if (n >= cap)
+                return -1;
+            for (int a = 0; a < 3; ++a)
+                put_u32(s + t.payload + 4u * (uint32_t)a, (uint32_t)scale);
+            changed[n].off = t.payload;
+            changed[n].len = 12;
+            ++n;
+        }
+    }
+    return k == 0 ? n : -1;
 }
