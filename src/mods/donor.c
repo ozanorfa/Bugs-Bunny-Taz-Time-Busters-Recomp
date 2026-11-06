@@ -132,7 +132,7 @@ int donor_extract(const uint8_t* file, size_t file_len, uint32_t actor_type,
             b->off = (uint32_t)at;
             b->size = size;
             b->frames = size >= 8 ? bouze_u16(data + off + 4) : 0;
-            b->mode = size >= 8 ? (uint8_t)(data[off + 2] >> 1) : 0;
+            b->ticks = size >= 8 ? (uint8_t)(data[off + 2] >> 1) : 0;
             if (pass == 1)
                 memcpy(out->image + at, data + off, size);
             at = (at + size + 3u) & ~(size_t)3u;
@@ -168,6 +168,137 @@ static const DonorBlob* find_sub(const DonorBlob* v, int n, uint16_t sub)
         if (v[i].sub == sub)
             return &v[i];
     return NULL;
+}
+
+/* ---- Keyframe streams ----------------------------------------------------
+ * Format read by the game's keyframe interpreter FUN_800563EC (NOTES.md
+ * "Keyframe stream format"; same rules as tools/bouze/keyframes.py): after
+ * the 8-byte blob header, per frame an 8-byte header (u16 [0] = frame
+ * halfwords + 2, [1] = command count, [2] = frame index) and the commands,
+ * each a u16 (bits 0-7 node, 8-11 opcode, 12-15 flags) plus u16 args. */
+#define KF_OP_MASK  0x0F00u
+#define KF_OP_ROOT  0x0A00u   /* actor +0x84 = this node: attach point */
+
+static uint32_t kf_nargs(uint16_t cmd)
+{
+    const uint32_t op = cmd & KF_OP_MASK, fl = cmd & 0xF000u;
+    const uint32_t r = (fl & 0x2000u) ? 3u : 0u, s = (fl & 0x4000u) ? 3u : 0u;
+    switch (op) {
+    case 0x100u: case 0xD00u:
+        return r + s + ((fl & 0x8000u) ? 3u : ((fl & 0x1000u) ? 2u : 0u));
+    case 0x200u: case 0x300u: case 0xC00u: return 1u;
+    case 0x400u: case 0x700u: return 4u;
+    case 0x600u: case 0xE00u: return 2u;
+    case 0x900u: return (fl & 0x1000u) ? 4u : 7u;
+    case 0xB00u: return (r + s + ((fl & 0x8000u) ? 3u : 0u) + 1u) >> 1;
+    default: return 0u;
+    }
+}
+
+/* Counts, per node, the root (attach point) commands of one animation blob.
+ * Returns 1 if the blob parses exactly to its end. */
+static int kf_count_roots(const uint8_t* blob, uint32_t size, uint32_t counts[256])
+{
+    if (size < 8)
+        return 0;
+    const uint16_t frames = bouze_u16(blob + 4);
+    uint32_t p = 8;
+    for (uint32_t f = 0; f < frames; ++f) {
+        if (p + 8u > size)
+            return 0;
+        const uint16_t n = bouze_u16(blob + p + 2);
+        p += 8;
+        for (uint32_t c = 0; c < n; ++c) {
+            if (p + 2u > size)
+                return 0;
+            const uint16_t cmd = bouze_u16(blob + p);
+            const uint32_t len = 2u + 2u * kf_nargs(cmd);
+            if (len > size - p)
+                return 0;
+            if ((cmd & KF_OP_MASK) == KF_OP_ROOT)
+                ++counts[cmd & 0xFFu];
+            p += len;
+        }
+    }
+    return p == size;
+}
+
+static void put_u16(uint8_t* p, uint16_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+}
+
+/* Integer wobble of the attach point (radius 30, 12 steps of 30 degrees):
+ * the tornado sways a little around the actor, as Taz's own spin does. */
+static const int8_t kWobbleCos[12] = {30, 26, 15, 0, -15, -26, -30, -26, -15, 0, 15, 26};
+
+int donor_add_spin(Donor* d, uint16_t sub, uint16_t frames)
+{
+    if (!d->image || frames == 0 || find_sub(d->anims, d->anim_count, sub) ||
+        d->anim_count >= DONOR_MAX_ANIMS)
+        return 0;
+    /* The attach point is the node the donor's own animations use as root
+     * reference (TRCA01 enemy: node 23, a direct child of node 1). */
+    uint32_t counts[256] = {0};
+    for (int i = 0; i < d->anim_count; ++i)
+        if (!kf_count_roots(d->image + d->anims[i].off, d->anims[i].size, counts))
+            return 0;
+    uint16_t attach = 0;
+    for (uint32_t n = 2; n < 256; ++n)
+        if (counts[n] > counts[attach])
+            attach = (uint16_t)n;
+    if (attach == 0 || counts[attach] == 0)
+        return 0;
+
+    /* Frame 0: zero collision box (like Taz's spin), node 1 at the actor
+     * origin (the body is not drawn in the spin state; the next animation's
+     * first frame poses every node again), attach point at the wobble
+     * offset, root = attach point. Later frames: move the attach point. */
+    const uint32_t size = 8u + (8u + 2u * 14u) + (uint32_t)(frames - 1u) * (8u + 2u * 5u);
+    const uint32_t at = (d->image_size + 3u) & ~3u;
+    uint8_t* img = (uint8_t*)realloc(d->image, at + size + 3u);
+    if (!img)
+        return 0;
+    d->image = img;
+    memset(img + d->image_size, 0, at + size + 3u - d->image_size);
+    uint8_t* b = img + at;
+    b[0] = 0x50;            /* header byte 0 as in the game's blobs */
+    b[2] = 2;               /* 1 tick per keyframe */
+    put_u16(b + 4, frames);
+    uint32_t p = 8;
+    for (uint16_t f = 0; f < frames; ++f) {
+        const int k = (f * 5) % 12;
+        const uint16_t tx = (uint16_t)(int16_t)kWobbleCos[k];
+        const uint16_t tz = (uint16_t)(int16_t)kWobbleCos[(k + 9) % 12];
+        const uint32_t hdr = p;
+        p += 8;
+        uint16_t n = 0;
+        if (f == 0) {
+            put_u16(b + p, 0x0900u); p += 2 + 14; ++n;        /* box: 7 zero args */
+            put_u16(b + p, 0x0D01u); p += 2; ++n;             /* node 1 at origin */
+            put_u16(b + p, (uint16_t)(0x8D00u | attach));     /* translation only */
+        } else {
+            put_u16(b + p, (uint16_t)(0x8100u | attach));
+        }
+        put_u16(b + p + 2, tx); put_u16(b + p + 4, 0); put_u16(b + p + 6, tz);
+        p += 8; ++n;
+        put_u16(b + p, (uint16_t)(KF_OP_ROOT | attach)); p += 2; ++n;
+        put_u16(b + hdr, (uint16_t)((p - hdr - 8u) / 2u + 2u));
+        put_u16(b + hdr + 2, n);
+        put_u16(b + hdr + 4, f);
+    }
+    if (p != size)
+        return 0;
+    DonorBlob* nb = &d->anims[d->anim_count++];
+    memset(nb, 0, sizeof(*nb));
+    nb->sub = sub;
+    nb->off = at;
+    nb->size = size;
+    nb->frames = frames;
+    nb->ticks = 1;
+    d->image_size = (at + size + 3u) & ~3u;
+    return attach;
 }
 
 static void put_u32(uint8_t* p, uint32_t v)
@@ -226,7 +357,7 @@ int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
                 goto out;
             }
             const uint16_t own_frames = bouze_u16(hdr + 4);
-            const uint8_t own_mode = (uint8_t)(hdr[2] >> 1);
+            const uint8_t own_ticks = (uint8_t)(hdr[2] >> 1);
             for (int m = 0; m < map_count && !b; ++m)
                 if (map[m].target_sub == ri.sub)
                     b = find_sub(d->anims, d->anim_count, map[m].donor_sub);
@@ -248,13 +379,14 @@ int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
                 ++st->anims_default;
             }
             /* The replaced character's state machine times its states by
-             * one pass of the animation it plays, loops included (a loop
-             * that is 4 frames long for Taz but 21 for the donor kept him
-             * ~80 instead of ~12 frames in that state). So every record
-             * keeps its own frame count (capped at the donor's, never
-             * reading past the donor data) and its own play mode. */
+             * one pass of the animation it plays, loops included (Taz's
+             * 4-frame, 2-tick landing replaced by a 21-frame donor loop
+             * kept him ~80 instead of ~12 display frames in that state).
+             * So every record keeps its own frame count (capped at the
+             * donor's, never reading past the donor data) and its own
+             * ticks per keyframe. */
             const uint16_t frames = own_frames < b->frames ? own_frames : b->frames;
-            if (frames != b->frames || own_mode != b->mode) {
+            if (frames != b->frames || own_ticks != b->ticks) {
                 if (*fix_count >= fix_cap) {
                     n = -1;
                     goto out;
@@ -262,7 +394,7 @@ int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
                 DonorAnimFix* f = &fixes[(*fix_count)++];
                 f->res_id = ri.id;
                 f->frames = frames;
-                f->mode = own_mode;
+                f->ticks = own_ticks;
             }
         } else {
             ++st->other;

@@ -162,15 +162,30 @@ static int level_load_parse_wrap(CPUState* cpu)
 #define DONOR_ACTOR_TYPE  0x01008381u
 /* Taz animation id -> donor animation id, by role. Animation ids are per
  * character (equal numbers mean nothing), so every entry comes from
- * watching the donor's animations played on Taz (52-animation survey and
- * filmstrips in Granwich, 2026-11-06; NOTES.md "M2"). */
+ * watching the donor's animations played on Taz and Taz's own moves traced
+ * per frame (filmstrips of both characters in Granwich, 2026-11-06;
+ * NOTES.md "M2" and "M4"). DONOR_SUB_SPIN is the synthetic spin built from
+ * the donor's skeleton (donor_add_spin), not a real animation id. */
+#define DONOR_SUB_SPIN    0xF001u
+#define DONOR_SPIN_FRAMES 32u
 static const DonorAnimMap kTazToTrca01[] = {
     /* Set-up animation every character plays first: its keyframe commands
      * push the actor's draw node (+0x9C). Without it the model is never
      * drawn. */
     {0x0001u, 0x0001u},
-    {0x0033u, 0x01B1u},   /* run -> crouched running stride (6-frame loop) */
+    {0x0033u, 0x01B1u},   /* run (loops while the pad is held) -> running stride */
+    {0x0034u, 0x0145u},   /* stop after running (skid round) -> upright turning */
     {0x0036u, 0x01C9u},   /* jump -> leap through the air and land */
+    {0x0039u, 0x014Bu},   /* land -> crouch low */
+    /* Spin (square; triangle in the air). Spin start must carry a root
+     * command (0xA00) so the game attaches the tornado: 0x01C6 (arm raised)
+     * has one on the attach node in 25 of 26 frames. The spin itself (and
+     * 0x0097, which hides Taz's body the same way) keeps the tornado on the
+     * ground; spin end -> crouched, shaking. */
+    {0x0072u, 0x01C6u},
+    {0x004Fu, DONOR_SUB_SPIN},
+    {0x0097u, DONOR_SUB_SPIN},
+    {0x0073u, 0x0151u},
 };
 /* Every other Taz animation: a standing pose with the arms down, the first
  * of these that is at least as long as Taz's own animation (so a play-once
@@ -183,7 +198,7 @@ static const uint16_t kDonorDefaults[] = {0x001Cu, 0x013Eu, 0x01C3u};
 
 /* Animation timing fixes, kept in mod memory after the donor image (part of
  * savestates): word 0 = 0x80000000 (pending) | count, then two words per
- * fix: res_id | frames << 16, mode. Applied after Level_LoadParse. */
+ * fix: res_id | frames << 16, ticks. Applied after Level_LoadParse. */
 #define FIX_TABLE_OFF   0x1F000u
 #define MAX_FIXES       256
 #define FIX_PENDING     0x80000000u
@@ -227,11 +242,22 @@ static void trca01_load_donor(void)
     if (!file)
         return;
     uint32_t got = 0;
-    if (psx_mod_read_disc_file(DONOR_FILE, file, size, &got) && got == size &&
-        donor_extract(file, size, DONOR_ACTOR_TYPE, &g_donor) &&
-        g_donor.image_size <= FIX_TABLE_OFF)
+    int spin_node = 0;
+    int ok = psx_mod_read_disc_file(DONOR_FILE, file, size, &got) && got == size &&
+             donor_extract(file, size, DONOR_ACTOR_TYPE, &g_donor);
+    if (ok) {
+        /* Without the synthetic spin, the spin falls back to a default
+         * pose (no tornado): reported, not fatal. */
+        spin_node = donor_add_spin(&g_donor, DONOR_SUB_SPIN, DONOR_SPIN_FRAMES);
+        ok = g_donor.image_size <= FIX_TABLE_OFF;
+    }
+    if (ok) {
         g_donor_state = 1;
-    else {
+        if (spin_node)
+            psx_mod_counter_add(PLUGIN_TRCA01 ".spin_attach_node", (uint32_t)spin_node);
+        else
+            psx_mod_counter_add(PLUGIN_TRCA01 ".spin_unavailable", 1);
+    } else {
         donor_free(&g_donor);
         g_donor_state = -1;
     }
@@ -374,7 +400,7 @@ static int bouze_decompress_wrap(CPUState* cpu)
         for (int k = 0; k < fix_count; ++k) {
             psx_mod_write_word(table + 4u + 8u * (uint32_t)k,
                                (uint32_t)fixes[k].res_id | ((uint32_t)fixes[k].frames << 16));
-            psx_mod_write_word(table + 8u + 8u * (uint32_t)k, fixes[k].mode);
+            psx_mod_write_word(table + 8u + 8u * (uint32_t)k, fixes[k].ticks);
         }
         psx_mod_write_word(table, FIX_PENDING | (uint32_t)fix_count);
         int failed = 0;
@@ -397,7 +423,7 @@ static int bouze_decompress_wrap(CPUState* cpu)
 }
 
 /* Apply the timing fixes to the animation records the loader built for
- * Taz: record +0x08 = frame count, +0x0B = mode. Runs after a successful
+ * Taz: record +0x08 = frame count, +0x0B = ticks per keyframe. Runs after a successful
  * Level_LoadParse of a load that was patched (table pending). */
 static int apply_anim_fixes_in_list(uint32_t list_head, uint32_t table, uint32_t count)
 {

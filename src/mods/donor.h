@@ -25,7 +25,7 @@ typedef struct DonorBlob {
     uint32_t off;     /* offset inside Donor.image */
     uint32_t size;
     uint16_t frames;  /* animations: header u16 [4] (frame count) */
-    uint8_t mode;     /* animations: header [2] >> 1 (1 = play once, 2 = loop) */
+    uint8_t ticks;    /* animations: header [2] >> 1 = game ticks per keyframe */
 } DonorBlob;
 
 typedef struct Donor {
@@ -44,6 +44,18 @@ int donor_extract(const uint8_t* file, size_t file_len, uint32_t actor_type,
                   Donor* out);
 void donor_free(Donor* d);
 
+/* Append a synthetic spin animation with id `sub` (`frames` keyframes) to
+ * the donor. Taz's spin draws a tornado: a separate actor the game attaches
+ * at the node his spin animations name with the root command (0xA00, actor
+ * +0x84; Ghidra: Actor_Update, the grab/attach code before 0x8001D0F8)
+ * while the body is not drawn. The donor's ordinary animations either have
+ * no root command (no tornado, nothing visible) or put it on a node high up
+ * the body. This one keeps node 1 at the actor origin and the donor's
+ * attach node (the node its own root commands use, found by parsing all
+ * its animations) next to it, so the tornado sits on the ground. Returns
+ * the attach node used, or 0 if it could not be built. */
+int donor_add_spin(Donor* d, uint16_t sub, uint16_t frames);
+
 /* Which donor animation plays for one animation id of the replaced
  * character. Animation ids are per character (the same number means a
  * different move for another character), so roles are mapped explicitly. */
@@ -53,11 +65,13 @@ typedef struct DonorAnimMap {
 } DonorAnimMap;
 
 /* Post-load correction of one animation record (the 16-byte record the
- * loader builds from the blob header): +0x08 frame count, +0x0B mode. */
+ * loader builds from the blob header): +0x08 frame count, +0x0B game ticks
+ * per keyframe (the animation player FUN_80057F78 counts it down; whether
+ * an animation loops or plays once is chosen by the caller, not the record). */
 typedef struct DonorAnimFix {
     uint16_t res_id;      /* resource id (entry +0x06) of the record */
     uint16_t frames;
-    uint8_t mode;
+    uint8_t ticks;
 } DonorAnimFix;
 
 /* Reads the 8-byte header of the replaced character's own blob at
@@ -93,9 +107,9 @@ typedef struct DonorPatchStats {
  * it asks for.
  * The replaced character's state machine times its states by one pass of
  * the animation it plays (loops included), so for every animation whose
- * donor length or mode differs, a fix is emitted that gives the record the
+ * donor length or speed differs, a fix is emitted that gives the record the
  * original's frame count (capped at the donor's, so the donor data is
- * never read past its end) and the original's play mode.
+ * never read past its end) and the original's ticks per keyframe.
  * Each rewritten payload is stored in `changed` (up to `cap`). Returns the
  * number of payloads rewritten, or
  * -1 on a malformed stream or when more than `cap` would change (then
