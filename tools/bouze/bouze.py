@@ -83,6 +83,8 @@ def decompress(src: bytes, pos: int = 0, size: int | None = None) -> bytes:
                 out.append(src[p])
                 p += 1
             else:
+                if p + 1 >= end:             # match straddling the end
+                    return bytes(out)
                 v = (src[p] << 8) | src[p + 1]
                 p += 2
                 dist = v >> dist_shift

@@ -15,10 +15,21 @@ game_id = "SLUS-01144"
 [[feature]]
 id = "swap-test"
 name = "Swap test: Taz uses Bugs' model"
-description = "Developer test (milestone M1). In 2-player mode, Taz is drawn with Bugs' model and animations after each level load. Taz's controls and behaviour are unchanged."
+description = "Developer test (milestone M1). In 2-player mode, Taz is drawn with Bugs' model and animations after each level load. Taz's controls and behaviour are unchanged. Do not combine with the TRCA01 feature."
 group = "Third character (in development)"
 default_enabled = false
 
 [[plugin]]
 feature = "swap-test"
 id = "bbt.third-character.swap-test"
+
+[[feature]]
+id = "trca01"
+name = "Taz becomes the Transylvania enemy"
+description = "Milestone M2 (in development). In 2-player mode, Taz is drawn with the model and animations of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ) when the game starts. Taz's controls and behaviour are unchanged. Known limits: textures are only right inside that level, and moves the enemy has no animation for show its standing pose. Do not combine with the swap test."
+group = "Third character (in development)"
+default_enabled = false
+
+[[plugin]]
+feature = "trca01"
+id = "bbt.third-character.trca01"

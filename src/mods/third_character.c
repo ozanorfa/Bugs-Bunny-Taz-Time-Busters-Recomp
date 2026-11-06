@@ -19,15 +19,47 @@
  *   actor +0x00 next, +0x08 type word, +0x98 resource node list
  *   (+0x170 / +0x174 hold the same list head)
  *   2-player flag    0x800100A4 bit 0x10
- * The model instance (+0x9C) is built only when the actor becomes active,
- * after loading, so changing the list right after the load takes effect.
+ * The resource list is only read when the actor becomes active, after
+ * loading, so changing it right after the load takes effect.
  *
- * Plain C; no host state (everything lives in guest RAM), so savestates and
- * future netplay see a pure function of guest state.
+ * M1 keeps no host state (everything lives in guest RAM).
+ *
+ * Milestone M2 ("trca01" feature): Taz is drawn with the model and the
+ * animations of the Transylvania enemy (LEVEL5/TRCA01.BZZ, actor type
+ * 0x01008381, model id 635). The donor data is read from the player's disc
+ * and packed by donor.c; the game's own loader then builds Taz's resources
+ * from it:
+ *   - activation reserves DONOR_RESERVE bytes of mod guest memory
+ *     (Expansion 1; part of savestates) and extracts the donor;
+ *   - Bouze_Decompress (0x8006B67C) is wrapped. A level load calls it four
+ *     times (write trace of DAT_8008DC18 on a Granwich load): record
+ *     stream (return address 0x800684F0), chunk 1 at the data part
+ *     (0x80068514), a variant chunk (0x80068E08; one of seven, picked by
+ *     the byte at 0x80010093), and, after the
+ *     0x2B marker has laid out the pools, the type-4 resource chunk: the
+ *     loader stores its destination at 0x80068C20 and jumps back into the
+ *     jal at 0x8006850C, so it also returns to 0x80068514 and the parser
+ *     continues (0x8006AB90). Only that last call is acted on; it is told
+ *     apart from the data-part call, whose destination is $s2 + $s3
+ *     (0x800684F8), by its registers at entry. Its $a1 (= DAT_8008DC18) is the base that tags
+ *     0x24 / 0x25 offsets are added to (no range check; verified in the
+ *     Level_LoadParse decompile and against TRCA01 RAM), and the 0x2B
+ *     marker precedes every resource record in all 63 level files;
+ *   - in 2-player mode the donor image is copied into the reserved memory
+ *     and the model / animation payloads of Taz's still unparsed resource
+ *     records (stream at DAT_8008DC50, DAT_8008DCC4 bytes reserved) are
+ *     pointed at it. Lengths do not change and no pool grows. The loader
+ *     relocates the model copy itself (FUN_8005BB84), which is why the
+ *     image is copied fresh on every load.
+ * Host state: the donor image is a pure function of the disc and never
+ * changes after it is loaded; the guest copy is rewritten on every load.
+ * Status is visible through the debug server: {"cmd":"mod_counters"}.
  */
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "cpu_state.h"
+#include "donor.h"
 #include "func_override.h"
 #include "mod_plugins.h"
 
@@ -113,9 +145,193 @@ static int level_load_parse_wrap(CPUState* cpu)
     return 1;
 }
 
+/* ---- M2: TRCA01 enemy as donor -------------------------------------- */
+
+#define PLUGIN_TRCA01 "bbt.third-character.trca01"
+
+#define ADDR_BOUZE_DECOMPRESS 0x8006B67Cu
+/* Return addresses of Level_LoadParse's Bouze_Decompress calls. */
+#define RA_STREAM_CALL        0x800684F0u   /* chunk 0: record stream */
+#define RA_DATA_PART_CALL     0x80068514u   /* chunk 1, then the type-4 chunk */
+#define RA_VARIANT_CALL       0x80068E08u   /* variant chunk (types 5-11) */
+#define ADDR_STREAM_BASE      0x8008DC50u   /* record stream (0x800AC000) */
+#define ADDR_STREAM_RESERVED  0x8008DCC4u   /* bytes reserved for the stream */
+#define ADDR_BLOB_BASE        0x8008DC18u   /* destination of the current call */
+
+#define DONOR_FILE        "LEVEL5/TRCA01.BZZ"
+#define DONOR_ACTOR_TYPE  0x01008381u
+/* Used for Taz animation ids the donor does not have: the donor's
+ * standing animation (until M4 maps animations by role). */
+#define DONOR_FALLBACK_ANIM 0x0018u
+/* Fixed reservation, so the savestate layout does not depend on the disc
+ * read. The TRCA01 donor needs 93,920 bytes. */
+#define DONOR_RESERVE     0x20000u
+#define MAX_STREAM_BYTES  0x100000u
+#define MAX_PATCHED       256
+
+#define GPR_V0 2
+#define GPR_A1 5
+#define GPR_S2 18
+#define GPR_S3 19
+#define GPR_RA 31
+
+/* First four instructions of Bouze_Decompress (sw ra,0(a2) / sw s0,8(a2) /
+ * sw s1,0xC(a2) / sw s2,0x10(a2)). */
+static const uint32_t kBouzeDecompressGuard[4] = {
+    0xACDF0000u, 0xACD00008u, 0xACD1000Cu, 0xACD20010u,
+};
+
+static Donor g_donor;              /* immutable once loaded */
+static int g_donor_state;          /* 0 = not loaded yet, 1 = ready, -1 = unusable */
+static uint32_t g_donor_guest;     /* process-lifetime mod memory, 0 if none */
+
+static void trca01_load_donor(void)
+{
+    if (g_donor_state != 0)
+        return;
+    uint32_t size = 0;
+    if (!psx_mod_read_disc_file(DONOR_FILE, NULL, 0, &size) || size == 0)
+        return;                    /* no disc mounted yet: try again later */
+    uint8_t* file = (uint8_t*)malloc(size);
+    if (!file)
+        return;
+    uint32_t got = 0;
+    if (psx_mod_read_disc_file(DONOR_FILE, file, size, &got) && got == size &&
+        donor_extract(file, size, DONOR_ACTOR_TYPE, &g_donor) &&
+        g_donor.image_size <= DONOR_RESERVE)
+        g_donor_state = 1;
+    else {
+        donor_free(&g_donor);
+        g_donor_state = -1;
+    }
+    free(file);
+}
+
+static void trca01_activate(void)
+{
+    if (!g_donor_guest)
+        g_donor_guest = psx_mod_alloc_guest_memory(DONOR_RESERVE, 16);
+    trca01_load_donor();
+}
+
+static void count(const char* name, uint32_t n)
+{
+    psx_mod_counter_add(name, n);
+}
+
+/* Copy the donor image into mod memory. psx_mod_host_write_ram only
+ * accepts main RAM, so Expansion 1 is written through the ordinary guest
+ * store path, one word at a time (image and address are word aligned). */
+static void write_donor_image(void)
+{
+    const uint8_t* p = g_donor.image;
+    for (uint32_t i = 0; i < g_donor.image_size; i += 4)
+        psx_mod_write_word(g_donor_guest + i,
+                           (uint32_t)p[i] | ((uint32_t)p[i + 1] << 8) |
+                           ((uint32_t)p[i + 2] << 16) | ((uint32_t)p[i + 3] << 24));
+}
+
+/* Wrap of Bouze_Decompress(src, dst, work): runs the original unchanged;
+ * after the type-4 chunk of a 2-player level load is unpacked, retargets
+ * Taz's resource records before the loader parses them. The call counters
+ * document which path each load took. */
+static int bouze_decompress_wrap(CPUState* cpu)
+{
+    const uint32_t ra = cpu->gpr[GPR_RA];
+    const uint32_t blob_base = cpu->gpr[GPR_A1];
+    /* The data-part call computes its destination as $s2 (stream base) +
+     * $s3 (header data offset), at 0x800684F8; the type-4 call loads it
+     * from DAT_8008DC18 while $s2 is the parser's cursor. */
+    const int data_part = blob_base == cpu->gpr[GPR_S2] + cpu->gpr[GPR_S3];
+    func_override_call_original(cpu);
+    if (ra == RA_STREAM_CALL) {
+        count(PLUGIN_TRCA01 ".call.stream", 1);
+        return 1;
+    }
+    if (ra == RA_VARIANT_CALL) {
+        count(PLUGIN_TRCA01 ".call.variant", 1);
+        return 1;
+    }
+    if (ra != RA_DATA_PART_CALL) {
+        count(PLUGIN_TRCA01 ".call.other", 1);
+        return 1;
+    }
+    if (data_part) {
+        count(PLUGIN_TRCA01 ".call.data_part", 1);
+        return 1;
+    }
+    /* Both were set by the loader before the 0x2B marker, which used them
+     * to lay out the pools just before this call. */
+    const uint32_t stream_base = psx_mod_read_word(ADDR_STREAM_BASE);
+    const uint32_t len = psx_mod_read_word(ADDR_STREAM_RESERVED);
+    count(PLUGIN_TRCA01 ".call.blob_chunk", 1);
+    if (cpu->gpr[GPR_V0] == 0)
+        return 1;
+    if ((psx_mod_read_byte(ADDR_MODE_FLAGS) & MODE_FLAG_TWO_PLAYER) == 0)
+        return 1;
+    trca01_load_donor();
+    if (g_donor_state != 1 || !g_donor_guest) {
+        count(PLUGIN_TRCA01 ".donor_unavailable", 1);
+        return 1;
+    }
+    if (!in_main_ram(stream_base) || !in_main_ram(blob_base) || len == 0 ||
+        len > MAX_STREAM_BYTES || !in_main_ram(stream_base + len - 1u) ||
+        blob_base <= stream_base + len ||
+        blob_base != psx_mod_read_word(ADDR_BLOB_BASE)) {
+        count(PLUGIN_TRCA01 ".unexpected_state", 1);
+        return 1;
+    }
+
+    uint8_t* s = (uint8_t*)malloc(len);
+    if (!s)
+        return 1;
+    uint32_t i = 0;
+    for (; i + 4 <= len; i += 4) {
+        const uint32_t w = psx_mod_read_word(stream_base + i);
+        s[i] = (uint8_t)w;
+        s[i + 1] = (uint8_t)(w >> 8);
+        s[i + 2] = (uint8_t)(w >> 16);
+        s[i + 3] = (uint8_t)(w >> 24);
+    }
+    for (; i < len; ++i)
+        s[i] = psx_mod_read_byte(stream_base + i);
+
+    size_t changed[MAX_PATCHED];
+    DonorPatchStats st;
+    const int n = donor_patch_stream(s, len, TYPE_TAZ, &g_donor, g_donor_guest,
+                                     blob_base, DONOR_FALLBACK_ANIM, changed,
+                                     MAX_PATCHED, &st);
+    if (n < 0) {
+        count(PLUGIN_TRCA01 ".stream_rejected", 1);
+    } else if (n > 0) {
+        /* Donor first, then the records that point at it. */
+        write_donor_image();
+        int failed = 0;
+        for (int k = 0; k < n; ++k)
+            if (!psx_mod_host_write_ram(stream_base + (uint32_t)changed[k],
+                                        s + changed[k], 8))
+                ++failed;
+        if (failed)
+            count(PLUGIN_TRCA01 ".record_write_failed", (uint32_t)failed);
+        count(PLUGIN_TRCA01 ".loads_patched", 1);
+        count(PLUGIN_TRCA01 ".models_patched", (uint32_t)st.models);
+        count(PLUGIN_TRCA01 ".anims_same_id", (uint32_t)st.anims_same);
+        count(PLUGIN_TRCA01 ".anims_fallback", (uint32_t)st.anims_fallback);
+    } else {
+        count(PLUGIN_TRCA01 ".no_taz_in_level", 1);
+    }
+    free(s);
+    return 1;
+}
+
 PSX_MOD_CONSTRUCTOR(register_bbt_third_character)
 {
     (void)psx_mod_register_function_override(
         "bbt.third-character.swap-test:level-load", ADDR_LEVEL_LOAD_PARSE,
         level_load_parse_wrap, kLevelLoadParseGuard, 4, FO_CREDIT_SELF);
+
+    (void)psx_mod_register_activation_plugin(PLUGIN_TRCA01, trca01_activate);
+    (void)psx_mod_register_function_override(
+        PLUGIN_TRCA01 ":bouze-data", ADDR_BOUZE_DECOMPRESS,
+        bouze_decompress_wrap, kBouzeDecompressGuard, 4, FO_CREDIT_SELF);
 }
