@@ -181,7 +181,7 @@ static const DonorAnimMap kTazToTrca01[] = {
 static const uint16_t kDonorDefaults[] = {0x001Cu, 0x013Eu, 0x01C3u};
 #define DONOR_DEFAULT_COUNT ((int)(sizeof(kDonorDefaults) / sizeof(kDonorDefaults[0])))
 
-/* Play-once fixes, kept in mod memory after the donor image (part of
+/* Animation timing fixes, kept in mod memory after the donor image (part of
  * savestates): word 0 = 0x80000000 (pending) | count, then two words per
  * fix: res_id | frames << 16, mode. Applied after Level_LoadParse. */
 #define FIX_TABLE_OFF   0x1F000u
@@ -396,7 +396,7 @@ static int bouze_decompress_wrap(CPUState* cpu)
     return 1;
 }
 
-/* Apply the play-once fixes to the animation records the loader built for
+/* Apply the timing fixes to the animation records the loader built for
  * Taz: record +0x08 = frame count, +0x0B = mode. Runs after a successful
  * Level_LoadParse of a load that was patched (table pending). */
 static int apply_anim_fixes_in_list(uint32_t list_head, uint32_t table, uint32_t count)

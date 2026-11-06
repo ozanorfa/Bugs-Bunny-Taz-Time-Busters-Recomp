@@ -91,10 +91,11 @@ typedef struct DonorPatchStats {
  * (read through `read_hdr`), else the longest of `defaults`. Tag 0x27 is
  * never changed, so the character's script still finds every animation id
  * it asks for.
- * The replaced character's state machine waits for its play-once
- * animations to end, so for each of those a fix is emitted that gives the
- * record the original's frame count (capped at the donor's, so the donor
- * data is never read past its end) and the play-once mode.
+ * The replaced character's state machine times its states by one pass of
+ * the animation it plays (loops included), so for every animation whose
+ * donor length or mode differs, a fix is emitted that gives the record the
+ * original's frame count (capped at the donor's, so the donor data is
+ * never read past its end) and the original's play mode.
  * Each rewritten payload is stored in `changed` (up to `cap`). Returns the
  * number of payloads rewritten, or
  * -1 on a malformed stream or when more than `cap` would change (then

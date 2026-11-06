@@ -247,15 +247,22 @@ int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
                     b = longest ? longest : &d->anims[0];
                 ++st->anims_default;
             }
-            if (own_mode == 1) {
+            /* The replaced character's state machine times its states by
+             * one pass of the animation it plays, loops included (a loop
+             * that is 4 frames long for Taz but 21 for the donor kept him
+             * ~80 instead of ~12 frames in that state). So every record
+             * keeps its own frame count (capped at the donor's, never
+             * reading past the donor data) and its own play mode. */
+            const uint16_t frames = own_frames < b->frames ? own_frames : b->frames;
+            if (frames != b->frames || own_mode != b->mode) {
                 if (*fix_count >= fix_cap) {
                     n = -1;
                     goto out;
                 }
                 DonorAnimFix* f = &fixes[(*fix_count)++];
                 f->res_id = ri.id;
-                f->frames = own_frames < b->frames ? own_frames : b->frames;
-                f->mode = 1;
+                f->frames = frames;
+                f->mode = own_mode;
             }
         } else {
             ++st->other;
