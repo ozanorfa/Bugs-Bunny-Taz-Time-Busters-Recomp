@@ -1,0 +1,24 @@
+# Third character mod (Phase 3, in development).
+# Selects the trusted plugin compiled into this game from
+# src/mods/third_character.c. This package contains no game data.
+format_version = 11
+id = "bbt.third-character"
+version = "0.1.0"
+name = "Third Character (in development)"
+author = "BugsBunnyTazRecomp project"
+description = "Work in progress: replaces Taz with another in-game character in 2-player mode."
+resolver = "declarative"
+
+[[target]]
+game_id = "SLUS-01144"
+
+[[feature]]
+id = "swap-test"
+name = "Swap test: Taz uses Bugs' model"
+description = "Developer test (milestone M1). In 2-player mode, Taz is drawn with Bugs' model and animations after each level load. Taz's controls and behaviour are unchanged."
+group = "Third character (in development)"
+default_enabled = false
+
+[[plugin]]
+feature = "swap-test"
+id = "bbt.third-character.swap-test"
