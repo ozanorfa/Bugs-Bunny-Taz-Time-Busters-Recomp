@@ -305,6 +305,89 @@ static void patch_scale(void)
     synth_level_free(&l);
 }
 
+
+static void pick_anim_by_role_then_length(void)
+{
+    SynthLevel l;
+    synth_level_build(&l);
+    Donor d;
+    REQUIRE(donor_extract(l.file.p, l.file.n, SYN_TYPE_DONOR, &d));
+    /* donor anims: 0x0001 (2 frames), 0x0033 (4 frames) */
+    const DonorAnimMap map[2] = {{0x0099, 0x0001}, {0x0050, 0x7777}};
+    const uint16_t defaults[2] = {0x0001, 0x0033};
+    int mapped = -1;
+    const DonorBlob* b = donor_pick_anim(&d, 0x0099, 30, map, 2, defaults, 2, &mapped);
+    REQUIRE(b != NULL);
+    CHECK_EQ(b->sub, 0x0001);                  /* the role table wins over length */
+    CHECK_EQ(mapped, 1);
+    b = donor_pick_anim(&d, 0x0021, 2, map, 2, defaults, 2, &mapped);
+    CHECK_EQ(b->sub, 0x0001);                  /* first default long enough */
+    CHECK_EQ(mapped, 0);
+    b = donor_pick_anim(&d, 0x0021, 3, map, 2, defaults, 2, &mapped);
+    CHECK_EQ(b->sub, 0x0033);
+    b = donor_pick_anim(&d, 0x0021, 99, map, 2, defaults, 2, &mapped);
+    CHECK_EQ(b->sub, 0x0033);                  /* none long enough: the longest */
+    /* a mapping to an animation the donor lacks falls back to the defaults */
+    b = donor_pick_anim(&d, 0x0050, 1, map, 2, defaults, 2, &mapped);
+    CHECK_EQ(b->sub, 0x0001);
+    CHECK_EQ(mapped, 0);
+    const uint16_t missing[1] = {0x4444};
+    b = donor_pick_anim(&d, 0x0021, 1, map, 2, missing, 1, &mapped);
+    CHECK_EQ(b->sub, d.anims[0].sub);          /* no default at all: the first */
+    CHECK_EQ(donor_anim_frames(&d.anims[1], 3), 3);
+    CHECK_EQ(donor_anim_frames(&d.anims[1], 9), 4);   /* capped at the donor's */
+    Donor none = d;
+    none.anim_count = 0;
+    CHECK(donor_pick_anim(&none, 0x0021, 1, map, 2, defaults, 2, &mapped) == NULL);
+    donor_free(&d);
+    synth_level_free(&l);
+}
+
+static void relocate_model_like_the_loader(void)
+{
+    SynthLevel l;
+    synth_level_build(&l);
+    Donor d;
+    REQUIRE(donor_extract(l.file.p, l.file.n, SYN_TYPE_DONOR, &d));
+    const DonorBlob* m = &d.models[0];
+    uint8_t* img = (uint8_t*)malloc(d.image_size);
+    REQUIRE(img != NULL);
+    memcpy(img, d.image, d.image_size);
+    const uint32_t guest = 0x9F002000u;
+    const uint32_t base = guest + m->off;
+    const uint8_t* src = d.image + m->off;
+    const uint16_t parts = bouze_u16(src + 2);
+    REQUIRE(parts == 1);
+    CHECK_EQ(donor_relocate_model(img, d.image_size, m, guest), 1);
+    const uint8_t* b = img + m->off;
+    CHECK_EQ(b[1] & 1, 1);                                   /* marked done */
+    CHECK_EQ(bouze_u32(b + 4), bouze_u32(src + 4) + base);  /* primitive list */
+    CHECK_EQ(bouze_u32(b + 8), bouze_u32(src + 8) + base + 8);   /* each part */
+    CHECK(memcmp(b + 12, src + 12, m->size - 12) == 0);     /* nothing else */
+    CHECK(memcmp(img, d.image, m->off) == 0);
+    CHECK_EQ(donor_relocate_model(img, d.image_size, m, guest), 0);   /* only once */
+    /* The loader leaves a model with 0xFFFF0000 at +0x20 alone. */
+    memcpy(img, d.image, d.image_size);
+    img[m->off + 0x20] = 0x00; img[m->off + 0x21] = 0x00;
+    img[m->off + 0x22] = 0xFF; img[m->off + 0x23] = 0xFF;
+    uint8_t* keep = (uint8_t*)malloc(d.image_size);
+    REQUIRE(keep != NULL);
+    memcpy(keep, img, d.image_size);
+    CHECK_EQ(donor_relocate_model(img, d.image_size, m, guest), 2);
+    CHECK(memcmp(img, keep, d.image_size) == 0);
+    /* malformed: blob past the image, part table past the blob */
+    DonorBlob bad = *m;
+    bad.off = d.image_size;
+    CHECK_EQ(donor_relocate_model(img, d.image_size, &bad, guest), 0);
+    memcpy(img, d.image, d.image_size);
+    img[m->off + 2] = 0xFF; img[m->off + 3] = 0x7F;
+    CHECK_EQ(donor_relocate_model(img, d.image_size, m, guest), 0);
+    free(keep);
+    free(img);
+    donor_free(&d);
+    synth_level_free(&l);
+}
+
 const TestCase kDonorTests[] = {
     {"extract_donor", extract_donor},
     {"extract_rejects", extract_rejects},
@@ -313,5 +396,7 @@ const TestCase kDonorTests[] = {
     {"patch_stream", patch_stream},
     {"patch_stream_limits", patch_stream_limits},
     {"patch_scale", patch_scale},
+    {"pick_anim_by_role_then_length", pick_anim_by_role_then_length},
+    {"relocate_model_like_the_loader", relocate_model_like_the_loader},
 };
 const int kDonorTestCount = (int)(sizeof(kDonorTests) / sizeof(kDonorTests[0]));

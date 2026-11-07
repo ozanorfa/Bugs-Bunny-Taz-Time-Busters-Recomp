@@ -60,4 +60,15 @@ static const DonorAnimMap kTazToTrca01[] = {
 static const uint16_t kDonorDefaults[] = {0x001Cu, 0x013Eu, 0x01C3u};
 #define DONOR_DEFAULT_COUNT ((int)(sizeof(kDonorDefaults) / sizeof(kDonorDefaults[0])))
 
+/* Phase 4: where the third actor's texels and CLUTs go (third_actor.c).
+ * VRAM nothing else uses: below the first displayed frame buffer (display
+ * 512x240 at 512,0 and 512,256; the frame's fills cover only the draw
+ * areas 512,16 / 512,272 of 512x216; every animated-texture copy lands at
+ * x < 512 -- gpu_state and GPU frame dumps). 16 rows, so blocks taller
+ * than that keep every second row. */
+#define P3_STRIP_X 512
+#define P3_STRIP_Y 240
+#define P3_STRIP_W 512
+#define P3_STRIP_H 16
+
 #endif /* BBT_TRCA01_PROFILE_H */

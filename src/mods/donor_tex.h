@@ -95,6 +95,12 @@ typedef struct DonorTexPlan {
     int16_t dv[DONOR_TEX_MAX_CLUTS];        /* texel v shift */
     uint16_t block_x[DONOR_TEX_MAX_CLUTS], block_y[DONOR_TEX_MAX_CLUTS];
     uint16_t clut_x[DONOR_TEX_MAX_CLUTS], clut_y[DONOR_TEX_MAX_CLUTS];
+    /* Texel rows: a record's v becomes ((v - vsrc) >> vshift) + vdst (mod
+     * 256); vshift 0 keeps every row (then the same as v + dv), 1 keeps
+     * every second row, and so on. block_h = rows uploaded. */
+    uint8_t vshift[DONOR_TEX_MAX_CLUTS];
+    uint8_t vsrc[DONOR_TEX_MAX_CLUTS], vdst[DONOR_TEX_MAX_CLUTS];
+    uint16_t block_h[DONOR_TEX_MAX_CLUTS];
 } DonorTexPlan;
 
 /* Pack the donor's CLUTs and blocks into the pool, counting only VRAM the
@@ -103,6 +109,19 @@ typedef struct DonorTexPlan {
  * largest first, each inside one texture page. Returns 1 if all fit. */
 int donor_tex_plan(const DonorTex* t, const DonorTexPool* pool, const VramMap* uploaded,
                    DonorTexPlan* plan);
+
+/* Pack the donor's blocks and CLUTs into one free strip of VRAM (x0, y0,
+ * w x h, inside one texture-page row): blocks left to right, each inside one
+ * 64-unit texture page, a block taller than the strip keeping every 2nd
+ * (4th, ...) row; then the CLUTs, 16-aligned, after the blocks. For VRAM
+ * that nothing else uses at all, e.g. below the displayed frame buffers.
+ * Returns 1 if everything fits. */
+int donor_tex_plan_strip(const DonorTex* t, int x0, int y0, int w, int h, DonorTexPlan* plan);
+
+/* The pixels to upload for block `i` under `plan` (plan->block_h rows of
+ * the block's width): the rows the plan keeps. Returns the pixel count. */
+uint32_t donor_tex_block_pixels(const DonorTex* t, const DonorTexPlan* plan, int i,
+                                uint16_t* out, uint32_t cap);
 
 /* The 12 patched bytes (+0..+11: uv0, CLUT, uv1, texture page, uv2, uv3)
  * of record `r`, from its original bytes. */

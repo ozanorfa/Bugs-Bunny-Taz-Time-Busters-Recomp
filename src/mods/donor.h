@@ -80,6 +80,31 @@ typedef struct DonorAnimFix {
     uint8_t ticks;
 } DonorAnimFix;
 
+/* The donor animation played for animation id `target_sub` of the
+ * replaced character, whose own animation has `own_frames` frames: the
+ * mapped one (`map[i].target_sub == target_sub`, *mapped = 1), else the
+ * first of `defaults` with at least `own_frames` frames, else the longest
+ * of `defaults`, else the donor's first animation. NULL without animations. */
+const DonorBlob* donor_pick_anim(const Donor* d, uint16_t target_sub, uint16_t own_frames,
+                                 const DonorAnimMap* map, int map_count,
+                                 const uint16_t* defaults, int default_count, int* mapped);
+
+/* Frame count a record playing donor animation `b` gets: the replaced
+ * character's own (its state machine times states by one pass), capped at
+ * the donor's. */
+uint16_t donor_anim_frames(const DonorBlob* b, uint16_t own_frames);
+
+/* Relocate model blob `m` of a donor image that will live at guest address
+ * `guest_image`, as the game's loader does for a tag-0x24 model
+ * (FUN_8005BB84, Ghidra: byte [1] bit 0 = done, u16 [2] = part count,
+ * word [4] += blob, then every 8 bytes from [8] word += blob + 8; skipped
+ * when word [0x20] is 0xFFFF0000; call site 0x80068FC0, a0 = the blob).
+ * Returns 1 when relocated (the resource entry then points at blob + 8, as
+ * the loader sets it), 2 when the loader would leave it as it is (entry =
+ * blob), 0 if the blob is malformed or already relocated. */
+int donor_relocate_model(uint8_t* image, uint32_t image_size, const DonorBlob* m,
+                         uint32_t guest_image);
+
 /* Reads the 8-byte header of the replaced character's own blob at
  * `blob_off` (relative to the level's type-4 chunk). Returns 1 on success. */
 typedef int (*DonorTargetHeaderFn)(void* ctx, uint32_t blob_off, uint8_t out[8]);

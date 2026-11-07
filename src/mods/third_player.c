@@ -40,6 +40,7 @@
 #include "func_override.h"
 #include "mod_plugins.h"
 #include "sio.h"
+#include "third_player.h"
 
 #define PLUGIN_P3            "bbt.third-character.p3"
 #define ADDR_PAD_POLL_FRAME  0x80065FC8u
@@ -60,6 +61,11 @@ static uint16_t game_bits(uint16_t sio_active_low)
 {
     const uint16_t pressed = (uint16_t)~sio_active_low;
     return (uint16_t)((pressed << 8) | (pressed >> 8));
+}
+
+uint32_t bbt_p3_record(void)
+{
+    return g_record;
 }
 
 static void p3_activate(void)

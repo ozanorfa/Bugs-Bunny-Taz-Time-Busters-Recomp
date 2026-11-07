@@ -319,6 +319,105 @@ static void plan_keeps_blocks_inside_one_page(void)
     fixture_free(&f);
 }
 
+
+/* Strip placement: every block in the strip, inside one page, every
+ * 2^vshift-th row uploaded, records sampling the kept rows. */
+static void check_strip_plan(const Fixture* f, const DonorTexPlan* plan, int x0, int y0, int w,
+                             int h, int want_shift)
+{
+    int rx[8], ry[8], rw[8], rh[8], n = 0;
+    for (int g = 0; g < f->t.block_count; ++g) {
+        const DonorTexBlock* b = &f->t.blocks[g];
+        CHECK_EQ(plan->vshift[g], want_shift);
+        CHECK_EQ(plan->block_h[g], (b->h + (1 << want_shift) - 1) >> want_shift);
+        CHECK(inside(plan->block_x[g], plan->block_y[g], b->w, plan->block_h[g], x0, y0, w, h));
+        CHECK_EQ(plan->block_x[g] / 64, (plan->block_x[g] + b->w - 1) / 64);
+        CHECK_EQ(plan->tpage[g], (plan->block_x[g] / 64) | ((plan->block_y[g] / 256) << 4));
+        CHECK_EQ(plan->clut_x[g] % 16, 0);
+        CHECK(inside(plan->clut_x[g], plan->clut_y[g], 16, 1, x0, y0, w, h));
+        rx[n] = plan->block_x[g]; ry[n] = plan->block_y[g]; rw[n] = b->w; rh[n] = plan->block_h[g]; ++n;
+        rx[n] = plan->clut_x[g]; ry[n] = plan->clut_y[g]; rw[n] = 16; rh[n] = 1; ++n;
+        /* uploaded pixels: the kept source rows */
+        uint16_t px[8 * 16];
+        CHECK_EQ(donor_tex_block_pixels(&f->t, plan, g, px, 8 * 16), (uint32_t)b->w * plan->block_h[g]);
+        int bad = 0;
+        for (int r = 0; r < plan->block_h[g]; ++r)
+            for (int x = 0; x < b->w; ++x)
+                bad += px[r * b->w + x] != texel(b->x + x, b->y + (r << want_shift));
+        CHECK_EQ(bad, 0);
+    }
+    int overlaps = 0;
+    for (int i = 0; i < n; ++i)
+        for (int k = i + 1; k < n; ++k)
+            overlaps += overlap(rx[i], ry[i], rw[i], rh[i], rx[k], ry[k], rw[k], rh[k]);
+    CHECK_EQ(overlaps, 0);
+    int bad = 0;
+    for (int i = 0; i < f->t.record_count; ++i) {
+        const DonorTexRecord* r = &f->t.records[i];
+        const uint8_t* in = f->d.image + r->off;
+        uint8_t out[12];
+        donor_tex_patch_record(&f->t, plan, r, in, out);
+        const int g = r->group;
+        const DonorTexBlock* b = &f->t.blocks[g];
+        const uint16_t tp = bouze_u16(out + 6);
+        const int px = (tp & 0xF) * 64, py = ((tp >> 4) & 1) * 256;
+        const int texels = r->shift_u3 ? 4 : 3;
+        for (int k = 0; k < texels; ++k) {
+            const int o = k == 3 ? 10 : 4 * k;
+            bad += !inside(px + out[o] / 4, py + out[o + 1], 1, 1, plan->block_x[g],
+                           plan->block_y[g], b->w, plan->block_h[g]);
+            /* the row it samples holds the source row (v rounded down) */
+            const int row = py + out[o + 1] - plan->block_y[g];
+            bad += row != ((f->t.page_y + in[o + 1] - b->y) >> want_shift);
+            bad += px + out[o] / 4 - plan->block_x[g] != f->t.page_x + in[o] / 4 - b->x;
+        }
+        if (want_shift == 0)
+            bad += out[1] != (uint8_t)(in[1] + plan->dv[g]);
+    }
+    CHECK_EQ(bad, 0);
+}
+
+static void plan_strip_keeps_every_other_row(void)
+{
+    Fixture f;
+    fixture(&f);
+    REQUIRE(f.ok);
+    REQUIRE(f.t.block_count == 2);             /* two 8x16 blocks */
+    DonorTexPlan plan;
+    REQUIRE(donor_tex_plan_strip(&f.t, 512, 240, 512, 8, &plan));
+    check_strip_plan(&f, &plan, 512, 240, 512, 8, 1);
+    CHECK(plan.block_y[0] == 240 && plan.block_y[1] == 240);
+    REQUIRE(donor_tex_plan_strip(&f.t, 512, 240, 512, 5, &plan));
+    check_strip_plan(&f, &plan, 512, 240, 512, 5, 2);
+    REQUIRE(donor_tex_plan_strip(&f.t, 512, 496, 512, 16, &plan));
+    check_strip_plan(&f, &plan, 512, 496, 512, 16, 0);
+    CHECK_EQ(plan.tpage[0] >> 4, 1);           /* second page row */
+    /* a block never straddles a texture page: 60..67 would */
+    REQUIRE(donor_tex_plan_strip(&f.t, 572, 240, 452, 16, &plan));
+    check_strip_plan(&f, &plan, 572, 240, 452, 16, 0);
+    CHECK_EQ(plan.block_x[0], 576);
+    fixture_free(&f);
+}
+
+static void plan_strip_rejects(void)
+{
+    Fixture f;
+    fixture(&f);
+    REQUIRE(f.ok);
+    DonorTexPlan plan;
+    CHECK(!donor_tex_plan_strip(&f.t, 512, 250, 512, 16, &plan));   /* crosses a page row */
+    CHECK(!donor_tex_plan_strip(&f.t, 512, 240, 12, 16, &plan));    /* blocks do not fit */
+    CHECK(!donor_tex_plan_strip(&f.t, 512, 240, 16, 16, &plan));    /* no room for CLUTs */
+    CHECK(donor_tex_plan_strip(&f.t, 512, 240, 32, 2, &plan));      /* CLUTs on the next row */
+    CHECK(plan.clut_y[0] == 240 && plan.clut_x[0] == 528);
+    CHECK(plan.clut_y[1] == 241 && plan.clut_x[1] == 528);
+    CHECK(!donor_tex_plan_strip(&f.t, 1020, 240, 8, 16, &plan));    /* past VRAM */
+    DonorTex none = f.t;
+    none.block_count = 0;
+    CHECK(!donor_tex_plan_strip(&none, 512, 240, 512, 16, &plan));
+    fixture_free(&f);
+}
+
 const TestCase kDonorTexTests[] = {
     {"extract_groups_and_records", extract_groups_and_records},
     {"extract_rebuilds_pixels", extract_rebuilds_pixels},
@@ -328,5 +427,7 @@ const TestCase kDonorTexTests[] = {
     {"plan_and_patch", plan_and_patch},
     {"plan_needs_uploaded_pool_vram", plan_needs_uploaded_pool_vram},
     {"plan_keeps_blocks_inside_one_page", plan_keeps_blocks_inside_one_page},
+    {"plan_strip_keeps_every_other_row", plan_strip_keeps_every_other_row},
+    {"plan_strip_rejects", plan_strip_rejects},
 };
 const int kDonorTexTestCount = (int)(sizeof(kDonorTexTests) / sizeof(kDonorTexTests[0]));

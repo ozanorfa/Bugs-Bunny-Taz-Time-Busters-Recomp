@@ -60,11 +60,38 @@ label = "65%"
 
 [[feature]]
 id = "p3"
-name = "Third player (Phase 4, step 0: input only)"
-description = "Developer test. Reads a third controller (seat 3) every frame through the same path netplay synchronizes. Needs a build with 5 controller seats and a 3-player game.toml (multitap on port 2). Nothing is visible in the game yet."
+name = "Third player: the Transylvania enemy (Phase 4, in development)"
+description = "Developer test. In 2-player mode, every level with Taz gets a third character next to him: a copy of Taz drawn with the model, animations and textures of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ). Bugs and Taz stay themselves. A third controller (seat 3) drives it, read every frame through the same path netplay synchronizes; this needs a build with 5 controller seats and a 3-player game.toml (multitap on port 2). Its textures are at half vertical resolution. Do not combine with the TRCA01 feature or the swap test."
 group = "Third character (in development)"
 default_enabled = false
 
 [[plugin]]
 feature = "p3"
 id = "bbt.third-character.p3"
+
+[[plugin]]
+feature = "p3"
+id = "bbt.third-character.p3-actor"
+
+[[option]]
+feature = "p3"
+id = "size"
+label = "Size"
+type = "choice"
+default = "75"
+
+[[option.choice]]
+value = "100"
+label = "100% (the enemy's own size)"
+
+[[option.choice]]
+value = "85"
+label = "85%"
+
+[[option.choice]]
+value = "75"
+label = "75% (about Bugs' height)"
+
+[[option.choice]]
+value = "65"
+label = "65%"

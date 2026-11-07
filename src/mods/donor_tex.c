@@ -468,6 +468,9 @@ int donor_tex_plan(const DonorTex* t, const DonorTexPool* pool, const VramMap* u
                     plan->tpage[bi] = (uint16_t)((px / 64) | ((py / 256) << 4));
                     plan->du[bi] = (int16_t)(4 * ((x - px) - (b->x - t->page_x)));
                     plan->dv[bi] = (int16_t)((y - py) - (b->y - t->page_y));
+                    plan->vsrc[bi] = (uint8_t)(b->y - t->page_y);
+                    plan->vdst[bi] = (uint8_t)(y - py);
+                    plan->block_h[bi] = b->h;
                     placed = 1;
                 }
         if (!placed)
@@ -480,19 +483,87 @@ out:
     return ok;
 }
 
+int donor_tex_plan_strip(const DonorTex* t, int x0, int y0, int w, int h, DonorTexPlan* plan)
+{
+    memset(plan, 0, sizeof(*plan));
+    if (t->block_count == 0 || t->clut_count == 0 || t->block_count != t->clut_count ||
+        w <= 0 || h <= 0 || x0 < 0 || y0 < 0 || x0 + w > (int)VRAM_W ||
+        y0 + h > (int)VRAM_H || y0 / 256 != (y0 + h - 1) / 256)
+        return 0;
+    const int py = y0 & ~255;
+    int x = x0;
+    for (int i = 0; i < t->block_count; ++i) {
+        const DonorTexBlock* b = &t->blocks[i];
+        if (b->w == 0 || b->h == 0 || b->w > 64)
+            return 0;
+        int sh = 0;
+        while (((b->h + (1 << sh) - 1) >> sh) > h)
+            ++sh;
+        if (x / 64 != (x + b->w - 1) / 64)
+            x = (x + 63) & ~63;               /* next texture page */
+        if (x + b->w > x0 + w)
+            return 0;
+        const int px = x & ~63;
+        plan->block_x[i] = (uint16_t)x;
+        plan->block_y[i] = (uint16_t)y0;
+        plan->block_h[i] = (uint16_t)((b->h + (1 << sh) - 1) >> sh);
+        plan->vshift[i] = (uint8_t)sh;
+        plan->vsrc[i] = (uint8_t)(b->y - t->page_y);
+        plan->vdst[i] = (uint8_t)(y0 - py);
+        plan->tpage[i] = (uint16_t)((px / 64) | ((py / 256) << 4));
+        plan->du[i] = (int16_t)(4 * ((x - px) - (b->x - t->page_x)));
+        plan->dv[i] = (int16_t)(plan->vdst[i] - plan->vsrc[i]);
+        x += b->w;
+    }
+    int cx = (x + 15) & ~15, cy = y0;
+    for (int g = 0; g < t->clut_count; ++g) {
+        if (cx + 16 > x0 + w) {
+            cx = (x0 + 15) & ~15;
+            ++cy;
+            /* rows below the blocks' first row are only free right of them */
+            if (cx < x)
+                cx = (x + 15) & ~15;
+            if (cy >= y0 + h || cx + 16 > x0 + w)
+                return 0;
+        }
+        plan->clut_x[g] = (uint16_t)cx;
+        plan->clut_y[g] = (uint16_t)cy;
+        cx += 16;
+    }
+    return 1;
+}
+
+uint32_t donor_tex_block_pixels(const DonorTex* t, const DonorTexPlan* plan, int i,
+                                uint16_t* out, uint32_t cap)
+{
+    const DonorTexBlock* b = &t->blocks[i];
+    const uint32_t n = (uint32_t)b->w * plan->block_h[i];
+    if (n > cap)
+        return 0;
+    for (uint32_t r = 0; r < plan->block_h[i]; ++r)
+        memcpy(out + r * b->w, t->pixels + b->px + ((r << plan->vshift[i]) * b->w),
+               (size_t)b->w * sizeof(uint16_t));
+    return n;
+}
+
+static uint8_t patch_v(const DonorTexPlan* plan, int g, uint8_t v)
+{
+    return (uint8_t)((((uint8_t)(v - plan->vsrc[g])) >> plan->vshift[g]) + plan->vdst[g]);
+}
+
 void donor_tex_patch_record(const DonorTex* t, const DonorTexPlan* plan,
                             const DonorTexRecord* r, const uint8_t in[12], uint8_t out[12])
 {
     (void)t;
     memcpy(out, in, 12);
-    const int g = r->group, du = plan->du[g], dv = plan->dv[g];
+    const int g = r->group, du = plan->du[g];
     for (int k = 0; k < 3; ++k) {
         out[4 * k] = (uint8_t)(in[4 * k] + du);
-        out[4 * k + 1] = (uint8_t)(in[4 * k + 1] + dv);
+        out[4 * k + 1] = patch_v(plan, g, in[4 * k + 1]);
     }
     if (r->shift_u3) {
         out[10] = (uint8_t)(in[10] + du);
-        out[11] = (uint8_t)(in[11] + dv);
+        out[11] = patch_v(plan, g, in[11]);
     }
     const uint16_t clut = (uint16_t)(((uint32_t)plan->clut_y[g] << 6) | (plan->clut_x[g] >> 4));
     out[2] = (uint8_t)clut;

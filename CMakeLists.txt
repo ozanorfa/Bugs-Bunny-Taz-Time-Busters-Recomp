@@ -67,6 +67,9 @@ target_sources(psx-runtime PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/donor.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/donor_tex.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/third_player.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/third_actor.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/clone_res.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/donor_runtime.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/bouze.c")
 
 # Stage runtime configs next to the exe for direct build/ launches. Only copy

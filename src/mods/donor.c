@@ -189,12 +189,81 @@ void donor_free(Donor* d)
     memset(d, 0, sizeof(*d));
 }
 
+static void put_u32(uint8_t* p, uint32_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
 static const DonorBlob* find_sub(const DonorBlob* v, int n, uint16_t sub)
 {
     for (int i = 0; i < n; ++i)
         if (v[i].sub == sub)
             return &v[i];
     return NULL;
+}
+
+const DonorBlob* donor_pick_anim(const Donor* d, uint16_t target_sub, uint16_t own_frames,
+                                 const DonorAnimMap* map, int map_count,
+                                 const uint16_t* defaults, int default_count, int* mapped)
+{
+    *mapped = 0;
+    if (d->anim_count == 0)
+        return NULL;
+    for (int m = 0; m < map_count; ++m)
+        if (map[m].target_sub == target_sub) {
+            const DonorBlob* b = find_sub(d->anims, d->anim_count, map[m].donor_sub);
+            if (b) {
+                *mapped = 1;
+                return b;
+            }
+        }
+    const DonorBlob* longest = NULL;
+    for (int k = 0; k < default_count; ++k) {
+        const DonorBlob* c = find_sub(d->anims, d->anim_count, defaults[k]);
+        if (!c)
+            continue;
+        if (c->frames >= own_frames)
+            return c;
+        if (!longest || c->frames > longest->frames)
+            longest = c;
+    }
+    return longest ? longest : &d->anims[0];
+}
+
+/* The replaced character's state machine times its states by one pass of
+ * the animation it plays, loops included (Taz's 4-frame, 2-tick landing
+ * replaced by a 21-frame donor loop kept him ~80 instead of ~12 display
+ * frames in that state). So every record keeps its own frame count, capped
+ * at the donor's so the donor data is never read past its end. */
+uint16_t donor_anim_frames(const DonorBlob* b, uint16_t own_frames)
+{
+    return own_frames < b->frames ? own_frames : b->frames;
+}
+
+int donor_relocate_model(uint8_t* image, uint32_t image_size, const DonorBlob* m,
+                         uint32_t guest_image)
+{
+    if (m->off > image_size || m->size < 12u || m->size > image_size - m->off)
+        return 0;
+    uint8_t* blob = image + m->off;
+    if (m->size >= 0x24u && bouze_u32(blob + 0x20) == 0xFFFF0000u)
+        return 2;                      /* the loader leaves these as they are */
+    if (blob[1] & 1u)
+        return 0;                      /* already relocated */
+    const uint32_t count = bouze_u16(blob + 2);
+    if (8u + 8u * count > m->size)
+        return 0;
+    const uint32_t base = guest_image + m->off;
+    blob[1] |= 1u;
+    if (count == 0)
+        return 1;
+    put_u32(blob + 4, bouze_u32(blob + 4) + base);
+    for (uint32_t i = 0; i < count; ++i)
+        put_u32(blob + 8u + 8u * i, bouze_u32(blob + 8u + 8u * i) + base + 8u);
+    return 1;
 }
 
 /* ---- Keyframe streams ----------------------------------------------------
@@ -328,13 +397,6 @@ int donor_add_spin(Donor* d, uint16_t sub, uint16_t frames)
     return attach;
 }
 
-static void put_u32(uint8_t* p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
 
 int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
                        const Donor* d, uint32_t image_addr, uint32_t blob_base,
@@ -385,34 +447,14 @@ int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
             }
             const uint16_t own_frames = bouze_u16(hdr + 4);
             const uint8_t own_ticks = (uint8_t)(hdr[2] >> 1);
-            for (int m = 0; m < map_count && !b; ++m)
-                if (map[m].target_sub == ri.sub)
-                    b = find_sub(d->anims, d->anim_count, map[m].donor_sub);
-            if (b) {
+            int mapped = 0;
+            b = donor_pick_anim(d, ri.sub, own_frames, map, map_count, defaults,
+                                default_count, &mapped);
+            if (mapped)
                 ++st->anims_mapped;
-            } else {
-                const DonorBlob* longest = NULL;
-                for (int k2 = 0; k2 < default_count && !b; ++k2) {
-                    const DonorBlob* c = find_sub(d->anims, d->anim_count, defaults[k2]);
-                    if (!c)
-                        continue;
-                    if (c->frames >= own_frames)
-                        b = c;
-                    else if (!longest || c->frames > longest->frames)
-                        longest = c;
-                }
-                if (!b)
-                    b = longest ? longest : &d->anims[0];
+            else
                 ++st->anims_default;
-            }
-            /* The replaced character's state machine times its states by
-             * one pass of the animation it plays, loops included (Taz's
-             * 4-frame, 2-tick landing replaced by a 21-frame donor loop
-             * kept him ~80 instead of ~12 display frames in that state).
-             * So every record keeps its own frame count (capped at the
-             * donor's, never reading past the donor data) and its own
-             * ticks per keyframe. */
-            const uint16_t frames = own_frames < b->frames ? own_frames : b->frames;
+            const uint16_t frames = donor_anim_frames(b, own_frames);
             if (frames != b->frames || own_ticks != b->ticks) {
                 if (*fix_count >= fix_cap) {
                     n = -1;

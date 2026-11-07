@@ -82,10 +82,13 @@
 
 #include "cpu_state.h"
 #include "donor.h"
+#include "donor_runtime.h"
 #include "donor_tex.h"
 #include "func_override.h"
 #include "mod_plugins.h"
 #include "trca01_profile.h"
+
+#define RT (bbt_donor_runtime())
 
 #define ADDR_LEVEL_LOAD_PARSE 0x80068174u
 #define ADDR_ACTOR_LIST_DEFS  0x8008DD44u
@@ -210,9 +213,7 @@ static const uint32_t kBouzeDecompressGuard[4] = {
  * loader sets actor +0xEC/+0xEE/+0xF0 itself. */
 #define DEFAULT_SIZE_PERCENT 75
 
-static Donor g_donor;              /* immutable once loaded */
 static int32_t g_scale = 0x1000 * DEFAULT_SIZE_PERCENT / 100;
-static int g_donor_state;          /* 0 = not loaded yet, 1 = ready, -1 = unusable */
 static uint32_t g_donor_guest;     /* process-lifetime mod memory, 0 if none */
 
 /* ---- M3: textures ------------------------------------------------------ */
@@ -221,10 +222,6 @@ static uint32_t g_donor_guest;     /* process-lifetime mod memory, 0 if none */
 /* Frame buffers live at x >= 512 (GPU state: display 512,0 / 512,256, draw
  * areas 512..1023), so new texels and CLUTs go left of that. */
 #define VRAM_TEXTURE_LIMIT 512
-/* Upload staging: pixels go to guest RAM below the stack pointer (unused
- * at that moment), are uploaded synchronously and the bytes restored. */
-#define STAGE_GAP          0x100u
-#define STAGE_MAX          0x800u
 #define MAX_TAZ_MODEL      0x10000u     /* Taz's model blob is 11,528 bytes */
 #define GPR_A0 4
 #define GPR_SP 29
@@ -234,8 +231,6 @@ static const uint32_t kLoadImageGuard[4] = {
     0x27BDFFD0u, 0xAFB10014u, 0x00808821u, 0xAFB20018u,
 };
 
-static DonorTex g_tex;             /* immutable once loaded */
-static int g_tex_ready;
 static VramMap* g_occ_level;       /* VRAM uploaded by the current level load */
 static int g_in_level_load;
 static DonorTexPool g_pool;        /* Taz's own VRAM in the level being loaded */
@@ -255,45 +250,24 @@ static void count(const char* name, uint32_t n)
 }
 
 
-static void trca01_load_donor(void)
+/* The donor is shared with the Phase 4 third actor (donor_runtime.c). The
+ * fix table follows the image in this plugin's reservation, so a larger
+ * image than FIX_TABLE_OFF cannot be used here. */
+static int g_donor_reported;       /* load outcome counted (once per process) */
+
+static int trca01_load_donor(void)
 {
-    if (g_donor_state != 0)
-        return;
-    uint32_t size = 0;
-    if (!psx_mod_read_disc_file(DONOR_FILE, NULL, 0, &size) || size == 0)
-        return;                    /* no disc mounted yet: try again later */
-    uint8_t* file = (uint8_t*)malloc(size);
-    if (!file)
-        return;
-    uint32_t got = 0;
-    int spin_node = 0;
-    int ok = psx_mod_read_disc_file(DONOR_FILE, file, size, &got) && got == size &&
-             donor_extract(file, size, DONOR_ACTOR_TYPE, &g_donor);
-    if (ok) {
-        /* Without the synthetic spin, the spin falls back to a default
-         * pose (no tornado): reported, not fatal. */
-        spin_node = donor_add_spin(&g_donor, DONOR_SUB_SPIN, DONOR_SPIN_FRAMES);
-        ok = g_donor.image_size <= FIX_TABLE_OFF;
+    const int state = bbt_donor_runtime_load();
+    if (state != 0 && !g_donor_reported) {
+        g_donor_reported = 1;
+        if (state == 1 && RT->spin_node)
+            count(PLUGIN_TRCA01 ".spin_attach_node", (uint32_t)RT->spin_node);
+        else if (state == 1)
+            count(PLUGIN_TRCA01 ".spin_unavailable", 1);
+        if (state == 1)
+            count(RT->tex_ready ? PLUGIN_TRCA01 ".tex_ready" : PLUGIN_TRCA01 ".tex_unavailable", 1);
     }
-    if (ok) {
-        g_donor_state = 1;
-        if (spin_node)
-            psx_mod_counter_add(PLUGIN_TRCA01 ".spin_attach_node", (uint32_t)spin_node);
-        else
-            psx_mod_counter_add(PLUGIN_TRCA01 ".spin_unavailable", 1);
-        /* Textures: without them the donor keeps TRCA01's texture
-         * positions (right only in TRCA01): reported, not fatal. */
-        const DonorBlob* model = NULL;
-        for (int i = 0; i < g_donor.model_count; ++i)
-            if (g_donor.models[i].sub == TAZ_MODEL_SUB)
-                model = &g_donor.models[i];
-        g_tex_ready = model && donor_tex_extract(file, size, &g_donor, model, &g_tex);
-        psx_mod_counter_add(g_tex_ready ? PLUGIN_TRCA01 ".tex_ready" : PLUGIN_TRCA01 ".tex_unavailable", 1);
-    } else {
-        donor_free(&g_donor);
-        g_donor_state = -1;
-    }
-    free(file);
+    return state == 1 && RT->donor.image_size <= FIX_TABLE_OFF;
 }
 
 static void trca01_read_size_option(void)
@@ -330,36 +304,11 @@ static int load_image_wrap(CPUState* cpu)
     return 1;
 }
 
-/* Upload w*h pixels to VRAM (x, y) from a staging area below the guest
- * stack pointer; the staged bytes are restored afterwards. */
-static int upload_rect(uint32_t sp, int x, int y, int w, int h, const uint16_t* px)
-{
-    const uint32_t n = (uint32_t)(w * h);
-    const uint32_t bytes = (n * 2u + 3u) & ~3u;
-    if (n == 0 || bytes > STAGE_MAX || sp < 0x80000000u + STAGE_GAP + bytes)
-        return 0;
-    const uint32_t base = (sp - STAGE_GAP - bytes) & ~3u;
-    if (!in_main_ram(base) || !in_main_ram(base + bytes - 1u))
-        return 0;
-    uint32_t saved[STAGE_MAX / 4u];
-    for (uint32_t i = 0; i < bytes / 4u; ++i) {
-        saved[i] = psx_mod_read_word(base + 4u * i);
-        const uint32_t lo = px[2u * i];
-        const uint32_t hi = 2u * i + 1u < n ? px[2u * i + 1u] : 0u;
-        psx_mod_write_word(base + 4u * i, lo | (hi << 16));
-    }
-    const int ok = psx_mod_psyq_load_image((uint32_t)x, (uint32_t)y, (uint32_t)w,
-                                           (uint32_t)h, base);
-    for (uint32_t i = 0; i < bytes / 4u; ++i)
-        psx_mod_write_word(base + 4u * i, saved[i]);
-    return ok;
-}
-
 /* After a patched load outside the donor's level: put the donor's texels
  * and CLUTs into Taz's own VRAM and point the model's records at them. */
 static void relocate_textures(CPUState* cpu)
 {
-    if (!g_tex_ready || !g_occ_level || !g_donor_guest)
+    if (!RT->tex_ready || !g_occ_level || !g_donor_guest)
         return;
     if (psx_mod_read_word(ADDR_LEVEL_ID) == DONOR_LEVEL_ID) {
         count(PLUGIN_TRCA01 ".tex_native_level", 1);
@@ -370,28 +319,28 @@ static void relocate_textures(CPUState* cpu)
         return;
     }
     DonorTexPlan plan;
-    if (!donor_tex_plan(&g_tex, &g_pool, g_occ_level, &plan)) {
+    if (!donor_tex_plan(&RT->tex, &g_pool, g_occ_level, &plan)) {
         count(PLUGIN_TRCA01 ".tex_no_space", 1);
         return;                    /* model keeps TRCA01's texture fields */
     }
     const uint32_t sp = cpu->gpr[GPR_SP];
     int failed = 0;
-    for (int i = 0; i < g_tex.block_count; ++i) {
-        const DonorTexBlock* b = &g_tex.blocks[i];
-        failed += !upload_rect(sp, plan.block_x[i], plan.block_y[i], b->w, b->h,
-                               g_tex.pixels + b->px);
+    for (int i = 0; i < RT->tex.block_count; ++i) {
+        const DonorTexBlock* b = &RT->tex.blocks[i];
+        failed += !bbt_upload_rect(sp, plan.block_x[i], plan.block_y[i], b->w, b->h,
+                               RT->tex.pixels + b->px);
     }
-    for (int g = 0; g < g_tex.clut_count; ++g)
-        failed += !upload_rect(sp, plan.clut_x[g], plan.clut_y[g], 16, 1,
-                               g_tex.pixels + g_tex.clut_px + 16u * (uint32_t)g);
+    for (int g = 0; g < RT->tex.clut_count; ++g)
+        failed += !bbt_upload_rect(sp, plan.clut_x[g], plan.clut_y[g], 16, 1,
+                               RT->tex.pixels + RT->tex.clut_px + 16u * (uint32_t)g);
     if (failed) {
         count(PLUGIN_TRCA01 ".tex_upload_failed", (uint32_t)failed);
         return;
     }
-    for (int i = 0; i < g_tex.record_count; ++i) {
-        const DonorTexRecord* r = &g_tex.records[i];
+    for (int i = 0; i < RT->tex.record_count; ++i) {
+        const DonorTexRecord* r = &RT->tex.records[i];
         uint8_t out[12];
-        donor_tex_patch_record(&g_tex, &plan, r, g_donor.image + r->off, out);
+        donor_tex_patch_record(&RT->tex, &plan, r, RT->donor.image + r->off, out);
         for (uint32_t k = 0; k < 12u; k += 2u)
             psx_mod_write_half(g_donor_guest + r->off + k, (uint16_t)(out[k] | (out[k + 1] << 8)));
     }
@@ -400,19 +349,7 @@ static void relocate_textures(CPUState* cpu)
     g_last_plan_level = psx_mod_read_word(ADDR_LEVEL_ID);
     ++g_last_plan_gen;
     count(PLUGIN_TRCA01 ".tex_relocated", 1);
-    count(PLUGIN_TRCA01 ".tex_records_patched", (uint32_t)g_tex.record_count);
-}
-
-/* FNV-1a (32-bit) over pixels as little-endian bytes, the same as the
- * tests compute over VRAM read back with vram_peek. */
-static uint32_t fnv1a_pixels(const uint16_t* px, uint32_t n)
-{
-    uint32_t h = 2166136261u;
-    for (uint32_t i = 0; i < n; ++i) {
-        h = (h ^ (uint8_t)px[i]) * 16777619u;
-        h = (h ^ (uint8_t)(px[i] >> 8)) * 16777619u;
-    }
-    return h;
+    count(PLUGIN_TRCA01 ".tex_records_patched", (uint32_t)RT->tex.record_count);
 }
 
 /* Debug command (debug-server thread; reads only host state that is
@@ -424,7 +361,7 @@ static int trca01_command(const char* args, char* reply, int cap)
 {
     if (args && strncmp(args, "group ", 6) == 0) {
         const int g = atoi(args + 6);
-        if (!g_tex_ready || g < 0 || g >= g_tex.clut_count) {
+        if (!RT->tex_ready || g < 0 || g >= RT->tex.clut_count) {
             snprintf(reply, (size_t)cap, "{\"ok\":false,\"err\":\"no such group\"}");
             return 0;
         }
@@ -434,15 +371,15 @@ static int trca01_command(const char* args, char* reply, int cap)
             snprintf(reply, (size_t)cap, "{\"ok\":false,\"err\":\"no relocation yet\"}");
             return 0;
         }
-        const DonorTexBlock* b = &g_tex.blocks[g];
+        const DonorTexBlock* b = &RT->tex.blocks[g];
         snprintf(reply, (size_t)cap,
                  "{\"ok\":true,\"group\":%d,\"src_clut\":%u,\"block\":[%u,%u,%u,%u],"
                  "\"clut\":[%u,%u],\"tpage\":%u,\"du\":%d,\"dv\":%d,"
                  "\"block_fnv\":\"%08X\",\"clut_fnv\":\"%08X\"}",
-                 g, g_tex.cluts[g], p.block_x[g], p.block_y[g], b->w, b->h, p.clut_x[g],
+                 g, RT->tex.cluts[g], p.block_x[g], p.block_y[g], b->w, b->h, p.clut_x[g],
                  p.clut_y[g], p.tpage[g], p.du[g], p.dv[g],
-                 fnv1a_pixels(g_tex.pixels + b->px, (uint32_t)b->w * b->h),
-                 fnv1a_pixels(g_tex.pixels + g_tex.clut_px + 16u * (uint32_t)g, 16u));
+                 bbt_fnv1a_pixels(RT->tex.pixels + b->px, (uint32_t)b->w * b->h),
+                 bbt_fnv1a_pixels(RT->tex.pixels + RT->tex.clut_px + 16u * (uint32_t)g, 16u));
         return 1;
     }
     const uint32_t gen = g_last_plan_gen;
@@ -450,9 +387,9 @@ static int trca01_command(const char* args, char* reply, int cap)
              "{\"ok\":true,\"donor_state\":%d,\"donor\":\"0x%08X\",\"image_size\":%u,"
              "\"models\":%d,\"anims\":%d,\"tex_ready\":%d,\"groups\":%d,\"records\":%d,"
              "\"plan_gen\":%u,\"plan_level\":%u}",
-             g_donor_state, g_donor_guest, g_donor.image_size, g_donor.model_count,
-             g_donor.anim_count, g_tex_ready, g_tex_ready ? g_tex.clut_count : 0,
-             g_tex_ready ? g_tex.record_count : 0, gen, g_last_plan_level);
+             RT->state, g_donor_guest, RT->donor.image_size, RT->donor.model_count,
+             RT->donor.anim_count, RT->tex_ready, RT->tex_ready ? RT->tex.clut_count : 0,
+             RT->tex_ready ? RT->tex.record_count : 0, gen, g_last_plan_level);
     return 1;
 }
 
@@ -461,8 +398,8 @@ static int trca01_command(const char* args, char* reply, int cap)
  * store path, one word at a time (image and address are word aligned). */
 static void write_donor_image(void)
 {
-    const uint8_t* p = g_donor.image;
-    for (uint32_t i = 0; i < g_donor.image_size; i += 4)
+    const uint8_t* p = RT->donor.image;
+    for (uint32_t i = 0; i < RT->donor.image_size; i += 4)
         psx_mod_write_word(g_donor_guest + i,
                            (uint32_t)p[i] | ((uint32_t)p[i + 1] << 8) |
                            ((uint32_t)p[i + 2] << 16) | ((uint32_t)p[i + 3] << 24));
@@ -517,8 +454,7 @@ static int bouze_decompress_wrap(CPUState* cpu)
         return 1;
     if ((psx_mod_read_byte(ADDR_MODE_FLAGS) & MODE_FLAG_TWO_PLAYER) == 0)
         return 1;
-    trca01_load_donor();
-    if (g_donor_state != 1 || !g_donor_guest) {
+    if (!trca01_load_donor() || !g_donor_guest) {
         count(PLUGIN_TRCA01 ".donor_unavailable", 1);
         return 1;
     }
@@ -548,7 +484,7 @@ static int bouze_decompress_wrap(CPUState* cpu)
      * in this level: the pool the donor's textures go to (M3). */
     g_pool_valid = 0;
     uint32_t moff = 0, msize = 0;
-    if (g_tex_ready && donor_find_model(s, len, TYPE_TAZ, TAZ_MODEL_SUB, &moff, &msize) &&
+    if (RT->tex_ready && donor_find_model(s, len, TYPE_TAZ, TAZ_MODEL_SUB, &moff, &msize) &&
         msize >= 12u && msize <= MAX_TAZ_MODEL && in_main_ram(blob_base + moff) &&
         in_main_ram(blob_base + moff + msize - 1u)) {
         uint8_t* m = (uint8_t*)malloc(msize);
@@ -565,7 +501,7 @@ static int bouze_decompress_wrap(CPUState* cpu)
     int fix_count = 0;
     DonorPatchStats st;
     uint32_t base_ctx = blob_base;
-    int n = donor_patch_stream(s, len, TYPE_TAZ, &g_donor, g_donor_guest,
+    int n = donor_patch_stream(s, len, TYPE_TAZ, &RT->donor, g_donor_guest,
                                blob_base, kTazToTrca01, TAZ_MAP_COUNT,
                                kDonorDefaults, DONOR_DEFAULT_COUNT,
                                read_target_header, &base_ctx, changed,

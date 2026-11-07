@@ -197,6 +197,41 @@ static int cmd_donor(const char* image, long lba, long size, const char* spin_ou
         for (int i = 0; i < t.clut_count; ++i)
             printf("%s%u", i ? "," : "", t.cluts[i]);
         printf("]");
+        /* Phase 4: the third actor's strip plan, and where its patched
+         * records sample (inside the new block, the kept source row). */
+        DonorTexPlan sp;
+        const int strip_ok = donor_tex_plan_strip(&t, P3_STRIP_X, P3_STRIP_Y, P3_STRIP_W,
+                                                  P3_STRIP_H, &sp);
+        printf(",\"strip\":{\"ok\":%s", strip_ok ? "true" : "false");
+        if (strip_ok) {
+            int outside = 0, wrong_row = 0;
+            for (int i = 0; i < t.record_count; ++i) {
+                const DonorTexRecord* r = &t.records[i];
+                const uint8_t* in = d.image + r->off;
+                uint8_t out[12];
+                donor_tex_patch_record(&t, &sp, r, in, out);
+                const int g = r->group;
+                const int ppx = (out[6] & 0xF) * 64, ppy = ((out[6] >> 4) & 1) * 256;
+                const int n = r->shift_u3 ? 4 : 3;
+                for (int k = 0; k < n; ++k) {
+                    const int o = k == 3 ? 10 : 4 * k;
+                    const int x = ppx + out[o] / 4, y = ppy + out[o + 1];
+                    outside += x < sp.block_x[g] || x >= sp.block_x[g] + t.blocks[g].w ||
+                               y < sp.block_y[g] || y >= sp.block_y[g] + sp.block_h[g];
+                    wrong_row += y - sp.block_y[g] !=
+                                 ((t.page_y + in[o + 1] - t.blocks[g].y) >> sp.vshift[g]);
+                }
+            }
+            printf(",\"texels_outside\":%d,\"wrong_rows\":%d,\"blocks\":[", outside, wrong_row);
+            for (int g = 0; g < t.block_count; ++g)
+                printf("%s[%u,%u,%u,%u,%u]", g ? "," : "", sp.block_x[g], sp.block_y[g],
+                       t.blocks[g].w, sp.block_h[g], sp.vshift[g]);
+            printf("],\"cluts\":[");
+            for (int g = 0; g < t.clut_count; ++g)
+                printf("%s[%u,%u]", g ? "," : "", sp.clut_x[g], sp.clut_y[g]);
+            printf("]");
+        }
+        printf("}");
     }
     printf("}}\n");
     donor_tex_free(&t);

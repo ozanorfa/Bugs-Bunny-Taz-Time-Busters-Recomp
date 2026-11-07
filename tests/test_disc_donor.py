@@ -117,6 +117,29 @@ class Donor(ProbeCase):
         self.assertEqual(got, TRCA01_BLOCKS)
         self.assertEqual(t["pixels"], sum(w * h for _, _, w, h in TRCA01_BLOCKS.values()) + 16 * 13)
 
+    def test_third_actor_strip(self):
+        """Phase 4: the enemy's 13 blocks and CLUTs fit the free VRAM strip
+        (x 512..1023, y 240..255), each block inside one texture page, the
+        taller blocks at half height, and every patched record samples
+        inside its block, on the source row it would have (rounded down)."""
+        s = self.d["tex"]["strip"]
+        self.assertTrue(s["ok"])
+        self.assertEqual((s["texels_outside"], s["wrong_rows"]), (0, 0))
+        rects = []
+        for (x, y, w, h, shift), (_, _, _, sh) in zip(s["blocks"], self.d["tex"]["blocks"]):
+            self.assertTrue(512 <= x and x + w <= 1024 and 240 <= y and y + h <= 256, (x, y, w, h))
+            self.assertEqual(x // 64, (x + w - 1) // 64)
+            self.assertEqual(shift, 0 if sh <= 16 else 1)
+            self.assertEqual(h, (sh + (1 << shift) - 1) >> shift)
+            rects.append((x, y, w, h))
+        for x, y in s["cluts"]:
+            self.assertEqual(x % 16, 0)
+            self.assertTrue(512 <= x and x + 16 <= 1024 and 240 <= y < 256)
+            rects.append((x, y, 16, 1))
+        overlaps = [(a, b) for i, a in enumerate(rects) for b in rects[i + 1:]
+                    if a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]]
+        self.assertEqual(overlaps, [])
+
 
 class EnemyAnimations(ProbeCase):
     def test_all_parse_exactly(self):

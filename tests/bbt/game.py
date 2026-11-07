@@ -49,6 +49,11 @@ def in_ram(p: int) -> bool:
     return 0x80000000 <= p < 0x80200000
 
 
+def in_guest(p: int) -> bool:
+    """Main RAM or the mods' guest memory (Expansion 1, KSEG0 0x9F000000)."""
+    return in_ram(p) or 0x9F000000 <= p < 0x9F800000
+
+
 def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
@@ -246,15 +251,16 @@ class Player:
 
     def anim_records(self, a: int) -> list[tuple[int, int, int, int]]:
         """(resource id, animation id, record address, keyframe pointer) of
-        every animation entry (kind 4) in the actor's resource list."""
+        every animation entry (kind 4) in the actor's resource list (main
+        RAM or mod memory: the Phase 4 third actor's list is there)."""
         out, node = [], self.c.u32(a + 0x98)
         for _ in range(512):
-            if not in_ram(node):
+            if not in_guest(node):
                 break
             e = self.c.u32(node + 8)
-            if in_ram(e) and self.c.u16(e + 8) == 4:
+            if in_guest(e) and self.c.u16(e + 8) == 4:
                 rec = self.c.u32(e + 0x18)
-                kf = self.c.u32(rec + 0x0C) if in_ram(rec) else 0
+                kf = self.c.u32(rec + 0x0C) if in_guest(rec) else 0
                 out.append((self.c.u16(e + 6), self.c.u16(e + 0x0A), rec, kf))
             node = self.c.u32(node)
         return out
