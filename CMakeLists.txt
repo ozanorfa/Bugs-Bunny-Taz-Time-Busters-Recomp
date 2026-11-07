@@ -17,6 +17,10 @@ project(BugsBunnyTazRecomp LANGUAGES C CXX)
 # picker; releases are compiled from the committed generated/ C, so it never
 # needs to generate or rebuild anything on a player's machine.
 # recomp-ui submodule present (PSX_RECOMP_UI defaults ON).
+# Netplay (LAN / Direct IP) is a configure-time choice, not this file's:
+# configure a separate build with -DPSX_NETPLAY=ON -DRNET_ENABLE_ICE=OFF
+# (build-net; ICE is only for online lobbies), so the other builds stay
+# without it. option(PSX_NETPLAY) in runtime.cmake keeps that cache value.
 # Full netplay UI — enable after adding recomp-ui + testing:
 # if(EXISTS "${PSXRECOMP_ROOT}/lib/recomp-net/CMakeLists.txt")
 #     set(PSX_NETPLAY ON CACHE BOOL "…" FORCE)

@@ -52,3 +52,7 @@ default_mode = "digital"
 require_cue = true
 required_tracks = 1
 required_disc_fp = "f01836c0f851a556686541ed5969411abfeb6c7c44539b729ca1975ffd267e06"
+# Keep the selected mods in a netplay match (default: cleared). A LAN room
+# opened in the launcher sends the host's mod plan to the guests; a
+# command-line match compares every peer's own plan (docs/NETPLAY.md, Mods).
+content_negotiation = true

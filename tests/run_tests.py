@@ -12,7 +12,7 @@ Tiers:
   disc         offline checks on the player's own disc (needs game.toml's disc)
   game         end-to-end: the built game runs headless, driven through the
                debug server (needs build-dev and, for the 3-player test,
-               build-p3; several minutes)
+               build-p3, for the netplay test build-net; several minutes)
 
 Exit status: 0 passed, 1 failed, 77 nothing could run (all skipped).
 Unless --no-build is given, the tests' own CMake project (tests/) is
@@ -34,7 +34,7 @@ HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 TIERS = ("c-unit", "python-unit", "disc", "game")
 MODULE_PREFIX = {"python-unit": "test_unit_", "disc": "test_disc_", "game": "test_game_"}
-GAME_ORDER = ("test_game_stock", "test_game_trca01", "test_game_p3")
+GAME_ORDER = ("test_game_stock", "test_game_trca01", "test_game_p3", "test_game_net")
 
 
 def build_tests(build_dir: Path) -> None:
@@ -85,6 +85,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--probe", type=Path)
     ap.add_argument("--game-build", type=Path, help="2-player build with debug tools (build-dev)")
     ap.add_argument("--p3-build", type=Path, help="5-seat build with debug tools (build-p3)")
+    ap.add_argument("--net-build", type=Path, help="netplay build with debug tools (build-net)")
     ap.add_argument("--disc", type=Path, help="disc .cue or image (default: game.toml [game] disc)")
     ap.add_argument("--out", type=Path, help="test output directory (default build-tests/out)")
     ap.add_argument("-q", "--quiet", action="store_true")
@@ -100,7 +101,8 @@ def main(argv: list[str]) -> int:
                 tiers.append(x)
 
     env = {"BBT_TESTS_BUILD": a.tests_build, "BBT_UNIT_EXE": a.unit_exe, "BBT_PROBE": a.probe,
-           "BBT_GAME_BUILD": a.game_build, "BBT_P3_BUILD": a.p3_build, "BBT_DISC": a.disc,
+           "BBT_GAME_BUILD": a.game_build, "BBT_P3_BUILD": a.p3_build,
+           "BBT_NET_BUILD": a.net_build, "BBT_DISC": a.disc,
            "BBT_OUT": a.out}
     for k, v in env.items():
         if v is not None:

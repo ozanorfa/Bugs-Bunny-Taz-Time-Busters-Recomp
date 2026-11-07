@@ -59,6 +59,12 @@ def p3_build() -> Path:
     return _env_path("BBT_P3_BUILD", PROJECT / "build-p3")
 
 
+def net_build() -> Path:
+    """A netplay build with debug tools (-DPSX_NETPLAY=ON -DRNET_ENABLE_ICE=OFF
+    -DBBT_MAX_PLAYERS=5, PSX_DEBUG_TOOLS=ON)."""
+    return _env_path("BBT_NET_BUILD", PROJECT / "build-net")
+
+
 def game_toml() -> Path:
     return _env_path("BBT_GAME_TOML", PROJECT / "game.toml")
 

@@ -285,5 +285,43 @@ class GameRunHelpers(unittest.TestCase):
                 os.environ["BBT_ALLOW_RELEASE"] = old
 
 
+class NetHelpers(unittest.TestCase):
+    # a line as build-net logs it (psx_netplay.c np_log_live_digest)
+    LINE = ("psxrecomp: rb live dig local sim=32 core=62c266f1 cpu=b72e1f59 clk=3ad7c244 "
+            "tim=5b6ef7f4 ram=5c41366b dirty=09beedb8 mod=00000000 av=35f9278a cd=faa79c21 "
+            "spu=32a339b4 mdec=12c3a1e5 aux=64791c8b")
+
+    def test_digest_lines(self):
+        from bbt import net
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "game.log"
+            log.write_text("psxrecomp: something else\n" + self.LINE + "\n"
+                           + self.LINE.replace("sim=32", "sim=64").replace("core=62c266f1", "core=00000001")
+                           + "\n")
+            self.assertEqual(net.digests(log), {
+                32: ("62c266f1", "5c41366b", "00000000", "35f9278a"),
+                64: ("00000001", "5c41366b", "00000000", "35f9278a")})
+            self.assertEqual(net.digests(Path(d) / "missing.log"), {})
+
+    def test_peer_folder_has_its_own_mods(self):
+        from bbt import net
+        with tempfile.TemporaryDirectory() as d:
+            build = Path(d) / "build"
+            (build / "bios").mkdir(parents=True)
+            (build / "bios" / "openbios.bin").write_bytes(b"\0" * 16)
+            (build / "mods" / "bundled" / "pkg").mkdir(parents=True)
+            (build / "mods" / "bundled" / "pkg" / "manifest.toml").write_text("id = 1\n")
+            (build / "mods" / "state.toml").write_text("the player's selection\n")
+            exe = build / "Game"
+            exe.write_bytes(b"exe")
+            link = net._peer_folder(build, exe, Path(d) / "peer0", {"trca01": True})
+            self.assertEqual(link.read_bytes(), b"exe")
+            self.assertEqual(link.parent, Path(d) / "peer0")
+            self.assertTrue((link.parent / "bios" / "openbios.bin").is_file())
+            self.assertTrue((link.parent / "mods" / "bundled" / "pkg" / "manifest.toml").is_file())
+            self.assertIn('id = "trca01"', (link.parent / "mods" / "state.toml").read_text())
+            self.assertEqual((build / "mods" / "state.toml").read_text(), "the player's selection\n")
+
+
 if __name__ == "__main__":
     unittest.main()
