@@ -388,6 +388,54 @@ static void relocate_model_like_the_loader(void)
     synth_level_free(&l);
 }
 
+
+static void hold_keeps_the_first_pose(void)
+{
+    SynthLevel l;
+    synth_level_build(&l);
+    Donor d;
+    REQUIRE(donor_extract(l.file.p, l.file.n, SYN_TYPE_DONOR, &d));
+    Donor c;
+    REQUIRE(donor_copy(&d, &c));
+    CHECK(c.image != d.image);
+    CHECK(memcmp(c.image, d.image, d.image_size) == 0);
+    CHECK_EQ(c.anim_count, d.anim_count);
+    /* source 0x0033: 4 frames, each a node translation + a root command */
+    const DonorBlob* src = &c.anims[1];
+    REQUIRE(src->sub == 0x0033);
+    const uint32_t before = c.image_size;
+    REQUIRE(donor_add_hold(&c, 0x0033, 0xF002, 6));
+    CHECK_EQ(d.image_size, before);                          /* the original is untouched */
+    REQUIRE(c.anim_count == d.anim_count + 1);
+    const DonorBlob* h = &c.anims[c.anim_count - 1];
+    CHECK_EQ(h->sub, 0xF002);
+    CHECK_EQ(h->frames, 6);
+    CHECK_EQ(h->off % 4, 0);
+    CHECK(h->off >= before);
+    const uint8_t* s0 = c.image + c.anims[1].off;
+    const uint8_t* b = c.image + h->off;
+    /* frame 0 = the source's frame 0 byte for byte; then empty frames */
+    const uint32_t cmds = bouze_u16(s0 + 8 + 2);
+    CHECK_EQ(bouze_u16(b + 8 + 2), cmds);
+    const uint32_t f0len = h->size - 8 - 5 * 8;
+    CHECK(memcmp(b + 8, s0 + 8, f0len) == 0);
+    CHECK_EQ(bouze_u16(b + 4), 6);
+    for (int f = 1; f < 6; ++f) {
+        const uint8_t* hd = b + 8 + f0len + 8 * (f - 1);
+        CHECK_EQ(bouze_u16(hd), 2);
+        CHECK_EQ(bouze_u16(hd + 2), 0);
+        CHECK_EQ(bouze_u16(hd + 4), f);
+    }
+    /* the source's frame 0 is exactly f0len bytes: its next frame starts there */
+    CHECK_EQ(bouze_u16(s0 + 8 + f0len + 4), 1);
+    CHECK(!donor_add_hold(&c, 0x0033, 0xF002, 6));           /* id taken */
+    CHECK(!donor_add_hold(&c, 0x4444, 0xF003, 6));           /* no such source */
+    CHECK(!donor_add_hold(&c, 0x0033, 0xF003, 0));
+    donor_free(&c);
+    donor_free(&d);
+    synth_level_free(&l);
+}
+
 const TestCase kDonorTests[] = {
     {"extract_donor", extract_donor},
     {"extract_rejects", extract_rejects},
@@ -398,5 +446,6 @@ const TestCase kDonorTests[] = {
     {"patch_scale", patch_scale},
     {"pick_anim_by_role_then_length", pick_anim_by_role_then_length},
     {"relocate_model_like_the_loader", relocate_model_like_the_loader},
+    {"hold_keeps_the_first_pose", hold_keeps_the_first_pose},
 };
 const int kDonorTestCount = (int)(sizeof(kDonorTests) / sizeof(kDonorTests[0]));

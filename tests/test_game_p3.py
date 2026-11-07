@@ -30,6 +30,8 @@ from bbt.client import fnv1a32_pixels, pad, prim_cluts  # noqa: E402
 from bbt.game import LEVEL_GRANNY, LEVEL_VICA01, TYPE_BUGS, TYPE_TAZ, in_ram, three_player_toml  # noqa: E402
 from test_game_stock import moved, start_run  # noqa: E402
 
+moved_by = moved
+
 P = "bbt.third-character.p3."
 A = "bbt.third-character.p3-actor."
 ACTOR_ERRORS = ("spawn_pool_full", "spawn_bad_list", "tex_upload_failed", "tex_unavailable",
@@ -37,6 +39,9 @@ ACTOR_ERRORS = ("spawn_pool_full", "spawn_bad_list", "tex_upload_failed", "tex_u
 PLACED = 0x8008DDCC
 MOD_MEMORY = 0x9F000000
 RUN = 0x0033                 # Taz's run animation id (NOTES.md "Phase 3 findings")
+TAZ_IDLE = range(0x001F, 0x0028)   # Taz's idle chain (NOTES.md "M4")
+STANCE_FRAMES = 21           # the enemy's stance 0x001C (NOTES.md "M2")
+ROLE_IDS = {0x0001, 0x0033, 0x0034, 0x0036, 0x0037, 0x0039, 0x0072, 0x004F, 0x0097, 0x0073}
 SCALE_75 = 0x0C00            # default "size" option, 75 %
 
 # (seat-2 pad word, active low) -> (held bits in the game's order, stick x, stick y)
@@ -217,8 +222,11 @@ class ThirdPlayer(unittest.TestCase):
         cs = self.counters()
         self.assertEqual({k: cs.get(k, 0) for k in ACTOR_ERRORS}, {k: 0 for k in ACTOR_ERRORS})
         self.assertEqual((cs.get("spawned"), cs.get("tex_uploaded"), cs.get("models")), (1, 1, 1))
-        # Taz's 67 animations (NOTES.md "Phase 3 findings"): 10 by role, the rest default.
-        self.assertEqual((cs.get("anims_mapped"), cs.get("anims_default")), (10, 57))
+        # Taz's 67 animations (NOTES.md "Phase 3 findings"): 10 by role and his
+        # 9 idle ones on the enemy's stance (at its own timing); 48 hold a pose.
+        self.assertEqual((cs.get("anims_mapped"), cs.get("anims_default"), cs.get("anims_native")),
+                         (19, 48, 9))
+        self.assertEqual(cs.get("hold_ready"), 1)
         show = self.actor_show()
         self.assertEqual((show["prepared"], show["tex"], show["groups"]), (1, 1, 13))
         a, taz = self.clone(), self.p.actor(2)
@@ -260,6 +268,52 @@ class ThirdPlayer(unittest.TestCase):
             self.assertNotEqual(c.u32(who + 0x98), c.u32(a + 0x98))
         # Taz's ids are all there, so his script finds every animation it asks for
         self.assertEqual(sorted(s for _, s, _, _ in mine), sorted(s for _, s, _, _ in self.p.anim_records(taz)))
+
+    def test_08b_idle_plays_whole_loops(self):
+        """The "trembling while idle" report: Taz's 2-7 frame idle loops
+        played the first frames of the enemy's 21-frame stance back and
+        forth. Idle now plays the whole stance at its own speed; moves
+        without a role hold one still pose; idle still answers at once."""
+        self.need("actor")
+        c, a = self.c, self.actor
+        img = int(self.actor_show()["image"], 16)
+        recs = self.p.anim_records(a)
+        idle = [(sub, r, kf) for _, sub, r, kf in recs if sub in TAZ_IDLE]
+        self.assertEqual(len(idle), 9)
+        stance = {kf for _, _, kf in idle}
+        self.assertEqual(len(stance), 1, "idle ids on different donor animations")
+        for sub, r, _ in idle:
+            self.assertEqual((c.u16(r + 8), c.u8(r + 0x0B)), (STANCE_FRAMES, 2), f"{sub:04X}")
+        held = {kf for _, sub, _, kf in recs if sub not in TAZ_IDLE and sub not in ROLE_IDS}
+        self.assertEqual(len(held), 1, "moves without a role are not all on the hold")
+        self.assertTrue(img <= held.pop() < img + self.actor_show()["image_size"])
+        # per frame: an idle pass runs to its last keyframe before the next
+        c.send({"cmd": "set_snapshot", "slot": 0, "addr": f"0x{a + 0x148:08X}", "size": 8})
+        self.seat2(None)
+        c.wait_frames(260)
+        end = c.frame() - 2
+        seen, wraps_early = [], 0
+        last = None
+        for fr in range(end - 200, end):
+            r = c.send({"cmd": "read_frame_ram", "addr": f"0x{a + 0x148:08X}", "len": 8, "frame": fr})
+            nfr, cur, aid, _ = struct.unpack("<4H", bytes.fromhex(r["hex"]))
+            if aid in TAZ_IDLE:
+                seen.append(aid)
+                if last and last[0] == aid and cur < last[1] and last[1] != nfr:
+                    wraps_early += 1
+                last = (aid, cur)
+        self.assertTrue(seen, "the third actor was not idle")
+        self.assertEqual(wraps_early, 0, "an idle loop restarted before its last keyframe")
+        # still answers at once: moving within 8 frames of a press (Taz: 4-6)
+        p0 = self.p.pos(a)
+        f0 = c.frame()
+        self.seat2(pad("right"))
+        moved = c.wait_until(lambda: moved_by(self.p.pos(a), p0) > 2, 30, 1)
+        lag = c.frame() - f0
+        self.seat2(None)
+        c.wait_frames(30)
+        self.assertTrue(moved, "no reaction from idle")
+        self.assertLessEqual(lag, 12, f"{lag} frames from the press to moving")
 
     def test_09_textures_in_the_strip_and_drawn(self):
         self.need("actor")

@@ -53,7 +53,7 @@ static void build_list(void)
     uint8_t nodes[5 * RES_NODE_SIZE], entries[5 * RES_ENTRY_SIZE], records[5 * ANIM_RECORD_SIZE];
     memset(records, 0xEE, sizeof records);
     CloneResStats st;
-    const int n = clone_build_resources(in, 5, &d, &lay, map, 1, defaults, 1, nodes, entries,
+    const int n = clone_build_resources(in, 5, &d, &lay, map, 1, defaults, 1, NULL, 0, nodes, entries,
                                         records, &st);
     CHECK_EQ(n, 3);
     CHECK_EQ(st.models, 1);
@@ -92,7 +92,7 @@ static void build_list(void)
 
     /* a model sub the donor lacks takes its first model */
     entry(&in[0], 157, RES_TYPE_MODEL, 0x000E, 0, 0, 0, 0);
-    CHECK_EQ(clone_build_resources(in, 1, &d, &lay, map, 1, defaults, 1, nodes, entries,
+    CHECK_EQ(clone_build_resources(in, 1, &d, &lay, map, 1, defaults, 1, NULL, 0, nodes, entries,
                                    records, &st), 0);
     CHECK_EQ(bouze_u32(entries + 0x18), lay.model_data[0]);
     CHECK_EQ(bouze_u32(nodes), 0);
@@ -114,17 +114,47 @@ static void build_rejects(void)
     static uint8_t entries[(CLONE_RES_MAX + 1) * RES_ENTRY_SIZE];
     static uint8_t records[(CLONE_RES_MAX + 1) * ANIM_RECORD_SIZE];
     CloneResStats st;
-    CHECK_EQ(clone_build_resources(in, 0, &d, &lay, NULL, 0, NULL, 0, nodes, entries, records, &st), -1);
-    CHECK_EQ(clone_build_resources(in, CLONE_RES_MAX + 1, &d, &lay, NULL, 0, NULL, 0, nodes,
+    CHECK_EQ(clone_build_resources(in, 0, &d, &lay, NULL, 0, NULL, 0, NULL, 0, nodes, entries, records, &st), -1);
+    CHECK_EQ(clone_build_resources(in, CLONE_RES_MAX + 1, &d, &lay, NULL, 0, NULL, 0, NULL, 0, nodes,
                                    entries, records, &st), -1);
     Donor no_anims = d;
     no_anims.anim_count = 0;
-    CHECK_EQ(clone_build_resources(in, 1, &no_anims, &lay, NULL, 0, NULL, 0, nodes, entries,
+    CHECK_EQ(clone_build_resources(in, 1, &no_anims, &lay, NULL, 0, NULL, 0, NULL, 0, nodes, entries,
                                    records, &st), -1);
     Donor no_model = d;
     no_model.model_count = 0;
-    CHECK_EQ(clone_build_resources(in, 1, &no_model, &lay, NULL, 0, NULL, 0, nodes, entries,
+    CHECK_EQ(clone_build_resources(in, 1, &no_model, &lay, NULL, 0, NULL, 0, NULL, 0, nodes, entries,
                                    records, &st), -1);
+    donor_free(&d);
+    synth_level_free(&l);
+}
+
+
+static void native_timing_plays_the_whole_donor_animation(void)
+{
+    SynthLevel l;
+    synth_level_build(&l);
+    Donor d;
+    REQUIRE(donor_extract(l.file.p, l.file.n, SYN_TYPE_DONOR, &d));
+    /* donor anim 0x0033: 4 frames, 2 ticks */
+    CloneResIn in[2];
+    entry(&in[0], 1, RES_TYPE_ANIM, 0x0021, 0, 0, 2, 1);    /* idle: 2 frames, 1 tick */
+    entry(&in[1], 2, RES_TYPE_ANIM, 0x0034, 0, 0, 2, 1);    /* other move */
+    CloneResLayout lay;
+    memset(&lay, 0, sizeof lay);
+    lay.nodes = 0x9F000300u; lay.entries = 0x9F000900u; lay.records = 0x9F001700u;
+    lay.image = 0x9F002000u;
+    const DonorAnimMap map[2] = {{0x0021, 0x0033}, {0x0034, 0x0033}};
+    const uint16_t native[1] = {0x0021};
+    uint8_t nodes[2 * RES_NODE_SIZE], entries[2 * RES_ENTRY_SIZE], records[2 * ANIM_RECORD_SIZE];
+    CloneResStats st;
+    REQUIRE(clone_build_resources(in, 2, &d, &lay, map, 2, NULL, 0, native, 1, nodes, entries,
+                                  records, &st) == 2);
+    CHECK_EQ(st.native, 1);
+    CHECK_EQ(bouze_u16(records + 0x08), 4);                 /* the donor's frames */
+    CHECK_EQ(records[0x0B], 2);                             /* and its ticks */
+    CHECK_EQ(bouze_u16(records + ANIM_RECORD_SIZE + 0x08), 2);   /* own timing */
+    CHECK_EQ(records[ANIM_RECORD_SIZE + 0x0B], 1);
     donor_free(&d);
     synth_level_free(&l);
 }
@@ -132,5 +162,6 @@ static void build_rejects(void)
 const TestCase kCloneResTests[] = {
     {"build_list", build_list},
     {"build_rejects", build_rejects},
+    {"native_timing_plays_the_whole_donor_animation", native_timing_plays_the_whole_donor_animation},
 };
 const int kCloneResTestCount = (int)(sizeof(kCloneResTests) / sizeof(kCloneResTests[0]));

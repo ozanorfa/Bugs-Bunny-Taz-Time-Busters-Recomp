@@ -158,6 +158,13 @@ static CloneResLayout g_layout;
 static DonorTexPlan g_plan;
 static int g_tex_planned;
 static int16_t g_scale = 0x1000 * DEFAULT_SIZE_PERCENT / 100;
+/* The third actor's own copy of the donor: the shared one (donor_runtime.c,
+ * also Phase 3's) plus the hold animation (trca01_profile.h). */
+static Donor g_donor;
+static DonorAnimMap g_map[TAZ_MAP_COUNT + TAZ_IDLE_COUNT];
+static int g_map_count;
+static uint16_t g_defaults[DONOR_DEFAULT_COUNT];
+static int g_default_count;
 
 #define RT (bbt_donor_runtime())
 
@@ -189,7 +196,29 @@ static void prepare(void)
             g_prepared = -1;
         return;
     }
-    const Donor* d = &RT->donor;
+    if (!donor_copy(&RT->donor, &g_donor)) {
+        g_prepared = -1;
+        return;
+    }
+    /* Roles: Phase 3's table, plus Taz's idle chain on the enemy's stance at
+     * its own length and speed; everything else holds a still pose. */
+    g_map_count = 0;
+    for (int i = 0; i < TAZ_MAP_COUNT; ++i)
+        g_map[g_map_count++] = kTazToTrca01[i];
+    for (int i = 0; i < TAZ_IDLE_COUNT; ++i)
+        g_map[g_map_count++] = (DonorAnimMap){kTazIdleIds[i], DONOR_IDLE_SUB};
+    if (donor_add_hold(&g_donor, DONOR_IDLE_SUB, DONOR_SUB_HOLD, DONOR_HOLD_FRAMES)) {
+        g_defaults[0] = DONOR_SUB_HOLD;
+        g_default_count = 1;
+        count("hold_ready", 1);
+    } else {
+        /* Without it: Phase 3's standing defaults (moving loops, cut). */
+        for (int i = 0; i < DONOR_DEFAULT_COUNT; ++i)
+            g_defaults[i] = kDonorDefaults[i];
+        g_default_count = DONOR_DEFAULT_COUNT;
+        count("hold_unavailable", 1);
+    }
+    const Donor* d = &g_donor;
     if (d->image_size > BLK_IMAGE_MAX || d->model_count == 0 || d->anim_count == 0) {
         g_prepared = -1;
         count("donor_unusable", 1);
@@ -406,9 +435,9 @@ static void spawn(CPUState* cpu, uint32_t taz)
     static uint8_t entries[CLONE_RES_MAX * RES_ENTRY_SIZE];
     static uint8_t records[CLONE_RES_MAX * ANIM_RECORD_SIZE];
     CloneResStats st;
-    const int nrec = clone_build_resources(in, n, &RT->donor, &g_layout, kTazToTrca01,
-                                           TAZ_MAP_COUNT, kDonorDefaults, DONOR_DEFAULT_COUNT,
-                                           nodes, entries, records, &st);
+    const int nrec = clone_build_resources(in, n, &g_donor, &g_layout, g_map, g_map_count,
+                                           g_defaults, g_default_count, kTazIdleIds,
+                                           TAZ_IDLE_COUNT, nodes, entries, records, &st);
     if (nrec < 0) {
         count("spawn_bad_list", 1);
         return;
@@ -480,6 +509,7 @@ static void spawn(CPUState* cpu, uint32_t taz)
     count("anims_mapped", (uint32_t)st.anims_mapped);
     count("anims_default", (uint32_t)st.anims_default);
     count("models", (uint32_t)st.models);
+    count("anims_native", (uint32_t)st.native);
     (void)upload_textures(cpu->gpr[GPR_SP]);
 }
 

@@ -62,6 +62,19 @@ int donor_find_model(const uint8_t* s, size_t len, uint32_t actor_type, uint16_t
  * the attach node used, or 0 if it could not be built. */
 int donor_add_spin(Donor* d, uint16_t sub, uint16_t frames);
 
+/* Deep copy of a donor (its own image buffer). Returns 1 on success. */
+int donor_copy(const Donor* src, Donor* out);
+
+/* Append a "hold" animation `hold_sub` of `frames` keyframes that keeps one
+ * pose: frame 0 of donor animation `src_sub` (the enemy's stances set every
+ * node absolutely on frame 0; later frames are deltas), then frames without
+ * commands. The keyframe interpreter FUN_800563EC runs exactly the command
+ * count of each frame header (Ghidra), so an empty frame changes nothing.
+ * For moves the donor has no animation for: they keep the replaced
+ * character's frame count (its state timing) without the jitter of a
+ * moving donor loop cut short. Returns 1 on success. */
+int donor_add_hold(Donor* d, uint16_t src_sub, uint16_t hold_sub, uint16_t frames);
+
 /* Which donor animation plays for one animation id of the replaced
  * character. Animation ids are per character (the same number means a
  * different move for another character), so roles are mapped explicitly. */

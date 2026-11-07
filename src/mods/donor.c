@@ -398,6 +398,68 @@ int donor_add_spin(Donor* d, uint16_t sub, uint16_t frames)
 }
 
 
+int donor_copy(const Donor* src, Donor* out)
+{
+    memset(out, 0, sizeof(*out));
+    if (!src->image)
+        return 0;
+    uint8_t* img = (uint8_t*)malloc(src->image_size ? src->image_size : 1u);
+    if (!img)
+        return 0;
+    memcpy(img, src->image, src->image_size);
+    *out = *src;
+    out->image = img;
+    return 1;
+}
+
+int donor_add_hold(Donor* d, uint16_t src_sub, uint16_t hold_sub, uint16_t frames)
+{
+    const DonorBlob* src = find_sub(d->anims, d->anim_count, src_sub);
+    if (!d->image || !src || frames == 0 || find_sub(d->anims, d->anim_count, hold_sub) ||
+        d->anim_count >= DONOR_MAX_ANIMS || src->size < 16u)
+        return 0;
+    /* Frame 0 of the source: 8-byte header (u16 [1] = command count), then
+     * the commands with their arguments. */
+    const uint8_t* sb = d->image + src->off;
+    const uint32_t count = bouze_u16(sb + 8 + 2);
+    uint32_t p = 16;
+    for (uint32_t c = 0; c < count; ++c) {
+        if (p + 2 > src->size)
+            return 0;
+        p += 2u + 2u * kf_nargs(bouze_u16(sb + p));
+    }
+    if (p > src->size)
+        return 0;
+    const uint32_t frame0 = p - 8u;               /* header + commands */
+    const uint32_t size = 8u + frame0 + (uint32_t)(frames - 1u) * 8u;
+    const uint32_t src_off = src->off;
+    const uint32_t at = (d->image_size + 3u) & ~3u;
+    uint8_t* img = (uint8_t*)realloc(d->image, at + size + 3u);
+    if (!img)
+        return 0;
+    d->image = img;
+    memset(img + d->image_size, 0, at + size + 3u - d->image_size);
+    uint8_t* b = img + at;
+    memcpy(b, img + src_off, 8u + frame0);       /* blob header and frame 0 */
+    put_u16(b + 4, frames);
+    put_u16(b + 8 + 4, 0);                        /* frame index */
+    for (uint32_t f = 1; f < frames; ++f) {
+        uint8_t* h = b + 8u + frame0 + (f - 1u) * 8u;
+        put_u16(h, 2);                            /* no command halfwords */
+        put_u16(h + 2, 0);                        /* no commands: nothing changes */
+        put_u16(h + 4, (uint16_t)f);
+    }
+    DonorBlob* nb = &d->anims[d->anim_count++];
+    memset(nb, 0, sizeof(*nb));
+    nb->sub = hold_sub;
+    nb->off = at;
+    nb->size = size;
+    nb->frames = frames;
+    nb->ticks = (uint8_t)(b[2] >> 1);
+    d->image_size = (at + size + 3u) & ~3u;
+    return 1;
+}
+
 int donor_patch_stream(uint8_t* s, size_t len, uint32_t target_type,
                        const Donor* d, uint32_t image_addr, uint32_t blob_base,
                        const DonorAnimMap* map, int map_count,

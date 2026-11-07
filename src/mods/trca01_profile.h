@@ -60,6 +60,21 @@ static const DonorAnimMap kTazToTrca01[] = {
 static const uint16_t kDonorDefaults[] = {0x001Cu, 0x013Eu, 0x01C3u};
 #define DONOR_DEFAULT_COUNT ((int)(sizeof(kDonorDefaults) / sizeof(kDonorDefaults[0])))
 
+/* Phase 4 (third actor) animation profile. Taz's idle animations (the
+ * idle chain 0x001F..0x0027: NOTES.md "M4") are 2-7 frames; the enemy's
+ * stance 0x001C cut to that many frames looped a few poses back and forth
+ * (the "trembling while idle" play-test report, 2026-11-07, measured per
+ * frame). Idle now plays the whole stance at its own speed; every other
+ * move without a role keeps a still pose (a hold built from the stance's
+ * first frame) with Taz's own frame count. */
+#define DONOR_IDLE_SUB    0x001Cu
+#define DONOR_SUB_HOLD    0xF002u
+#define DONOR_HOLD_FRAMES 128u    /* Taz's longest animation: 83 frames */
+static const uint16_t kTazIdleIds[] = {
+    0x001Fu, 0x0020u, 0x0021u, 0x0022u, 0x0023u, 0x0024u, 0x0025u, 0x0026u, 0x0027u,
+};
+#define TAZ_IDLE_COUNT ((int)(sizeof(kTazIdleIds) / sizeof(kTazIdleIds[0])))
+
 /* Phase 4: where the third actor's texels and CLUTs go (third_actor.c).
  * VRAM nothing else uses: below the first displayed frame buffer (display
  * 512x240 at 512,0 and 512,256; the frame's fills cover only the draw

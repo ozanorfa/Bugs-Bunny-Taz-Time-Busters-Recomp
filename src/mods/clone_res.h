@@ -54,6 +54,7 @@ typedef struct CloneResStats {
     int anims_mapped;
     int anims_default;
     int other;                         /* other types: entry copied unchanged */
+    int native;                        /* animations at the donor's own length and speed */
 } CloneResStats;
 
 /* Build the clone's resource list for a source list `in[0..n)`.
@@ -68,13 +69,17 @@ typedef struct CloneResStats {
  *               [12], +0x0B = blob [2] >> 1, +0x0C = blob + 8), except the
  *               frame count and ticks per keyframe, which are the source
  *               record's own (frames capped at the donor's): the
- *               character's state machine times its states by them.
+ *               character's state machine times its states by them --
+ *               except for the ids in `native`, which play the whole donor
+ *               animation at its own speed (states that only loop, such as
+ *               standing idle: a donor loop cut to a few frames jitters).
  * The donor animation for each id comes from donor_pick_anim (map, then
  * defaults). Returns the number of records used, or -1 if `n` is out of
  * range or the donor has no model / animation. */
 int clone_build_resources(const CloneResIn* in, int n, const Donor* d,
                           const CloneResLayout* lay, const DonorAnimMap* map,
                           int map_count, const uint16_t* defaults, int default_count,
+                          const uint16_t* native, int native_count,
                           uint8_t* nodes_out, uint8_t* entries_out, uint8_t* records_out,
                           CloneResStats* st);
 

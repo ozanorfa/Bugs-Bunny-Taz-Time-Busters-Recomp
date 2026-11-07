@@ -18,6 +18,7 @@ static void put_u32(uint8_t* p, uint32_t v)
 int clone_build_resources(const CloneResIn* in, int n, const Donor* d,
                           const CloneResLayout* lay, const DonorAnimMap* map,
                           int map_count, const uint16_t* defaults, int default_count,
+                          const uint16_t* native, int native_count,
                           uint8_t* nodes_out, uint8_t* entries_out, uint8_t* records_out,
                           CloneResStats* st)
 {
@@ -53,12 +54,17 @@ int clone_build_resources(const CloneResIn* in, int n, const Donor* d,
                                                  defaults, default_count, &mapped);
             const uint8_t* blob = d->image + b->off;
             uint8_t* r = records_out + ANIM_RECORD_SIZE * (uint32_t)records;
+            int own_timing = 1;
+            for (int k = 0; k < native_count; ++k)
+                own_timing &= native[k] != sub;
             memcpy(r, src, 8);
-            const uint16_t frames = donor_anim_frames(b, own_frames);
+            const uint16_t frames = own_timing ? donor_anim_frames(b, own_frames) : b->frames;
             r[0x08] = (uint8_t)frames;
             r[0x09] = (uint8_t)(frames >> 8);
             r[0x0A] = blob[12];
-            r[0x0B] = src[0x0B];
+            r[0x0B] = own_timing ? src[0x0B] : b->ticks;
+            if (!own_timing)
+                ++st->native;
             put_u32(r + 0x0C, lay->image + b->off + 8u);
             put_u32(e + 0x18, lay->records + ANIM_RECORD_SIZE * (uint32_t)records);
             ++records;

@@ -28,9 +28,9 @@ in per-configuration folders of multi-config generators.
 
 | Tier | Needs | What it covers |
 |---|---|---|
-| `c-unit` | a C compiler | `src/mods/bouze.c`, `donor.c`, `donor_tex.c`, `clone_res.c` on synthetic data built by `tests/unit/synth.c`: the LZ decoder (literals, matches, long lengths, stopping at the token count), header and record/tag grammar, donor extraction, the synthetic spin and its attach node, Taz's record patch and timing fixes, the scale patch, texture analysis and rebuild (CLUT bit 15, CLUT blocks that declare more rows than they carry), the VRAM map, the target pool, packing (uploaded VRAM only, one texture page per block) and the record patch; the animation picker, the model relocation (as the loader's FUN_8005BB84), the strip packing for the third actor (half-height blocks, records sampling the kept rows) and the third actor's own resource list |
+| `c-unit` | a C compiler | `src/mods/bouze.c`, `donor.c`, `donor_tex.c`, `clone_res.c` on synthetic data built by `tests/unit/synth.c`: the LZ decoder (literals, matches, long lengths, stopping at the token count), header and record/tag grammar, donor extraction, the synthetic spin and its attach node, Taz's record patch and timing fixes, the scale patch, texture analysis and rebuild (CLUT bit 15, CLUT blocks that declare more rows than they carry), the VRAM map, the target pool, packing (uploaded VRAM only, one texture page per block) and the record patch; the animation picker, the model relocation (as the loader's FUN_8005BB84), the strip packing for the third actor (half-height blocks, records sampling the kept rows), the hold animation, and the third actor's own resource list (with native idle timing) |
 | `python-unit` | Python | `tools/bouze/` (decoder, record parser, keyframe parser) against the C code's synthetic level and spin, the ISO 9660 reader on synthetic 2048- and 2352-byte images, disc lookup from `game.toml` / `.cue`, the 3-player `game.toml` writer, `mods/state.toml` writing and restoring |
-| `disc` | the player's disc (`game.toml` `[game] disc`) | it is the known dump (size, MD5); file layout; all 63 `.BZZ` files decode identically in C and Python and parse to their end marker; the TRCA01 enemy as the plugin extracts it (model, role table complete, spin on node 23, its 13 texture blocks / CLUTs as verified in VRAM); its and Taz's animations parse exactly; in all 38 levels with Taz the patch touches only his payloads and the texture plan fits (except `AZR01`, BUGS.md #20); the third actor's strip plan fits and every record samples inside its block |
+| `disc` | the player's disc (`game.toml` `[game] disc`) | it is the known dump (size, MD5); file layout; all 63 `.BZZ` files decode identically in C and Python and parse to their end marker; the TRCA01 enemy as the plugin extracts it (model, role table complete, spin on node 23, its 13 texture blocks / CLUTs as verified in VRAM); its and Taz's animations parse exactly; in all 38 levels with Taz the patch touches only his payloads and the texture plan fits (except `AZR01`, BUGS.md #20); the third actor's strip plan fits and every record samples inside its block; its hold animation is the stance's first frame plus empty frames |
 | `game` | `build-dev` (2 seats, `PSX_DEBUG_TOOLS=ON`); `build-p3` (`-DBBT_MAX_PLAYERS=5`) for the 3-player test; the disc | end to end through the debug server, see below |
 
 ### Game tests
@@ -63,7 +63,7 @@ run against `build-release`, which holds your own mod selection
   the enemy) is spawned next to Taz with its own resources while Bugs and
   Taz keep theirs; its textures are in the VRAM strip (pixel hashes from
   `{"cmd":"mod_cmd","name":"bbt.p3actor"}`) and it is drawn with them;
-  seat 2 drives only it; ✕ □ ○ △ and the air spin land it on the floor
+  it plays whole idle loops (no trembling) and still answers at once; seat 2 drives only it; ✕ □ ○ △ and the air spin land it on the floor
   drawn (the spin with a tornado); level jumps replace it; a savestate
   brings it back; random play on all three seats keeps the game running.
 

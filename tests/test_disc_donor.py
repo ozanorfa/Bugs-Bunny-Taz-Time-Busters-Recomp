@@ -117,6 +117,25 @@ class Donor(ProbeCase):
         self.assertEqual(got, TRCA01_BLOCKS)
         self.assertEqual(t["pixels"], sum(w * h for _, _, w, h in TRCA01_BLOCKS.values()) + 16 * 13)
 
+    def test_third_actor_hold(self):
+        """Phase 4: the hold animation (moves without a role) is the enemy
+        stance's first frame byte for byte, then frames without commands."""
+        h = self.d["hold"]
+        self.assertTrue(h["ok"], h)
+        lba, size = self.donor_file
+        blobs = {sub: blob for sub, _, blob in keyframes.anim_blobs(self.image, lba, size, DONOR)}
+        stance = blobs[0x001C]
+        _, _, fr, _ = keyframes.parse(stance)
+        f0_bytes = 8 + sum(2 + 2 * len(args) for _, args in fr[0])
+        self.assertEqual((h["frame0_cmds"], h["frame0_bytes"]), (len(fr[0]), f0_bytes))
+        self.assertEqual(h["frames"], 128)
+        self.assertEqual(h["empty_frames"], 127)
+        self.assertEqual(h["size"], 8 + f0_bytes + 127 * 8)
+        # every node posed absolutely on that frame (full / part poses), so
+        # it does not depend on the pose before it
+        self.assertEqual({c & 0xFF for c, _ in fr[0]} - {0}, set(range(1, 24)))
+        self.assertTrue(all((c & 0xF00) in (0x100, 0x400, 0x900, 0xD00) for c, _ in fr[0]))
+
     def test_third_actor_strip(self):
         """Phase 4: the enemy's 13 blocks and CLUTs fit the free VRAM strip
         (x 512..1023, y 240..255), each block inside one texture page, the

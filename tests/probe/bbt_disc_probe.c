@@ -181,6 +181,32 @@ static int cmd_donor(const char* image, long lba, long size, const char* spin_ou
             fclose(o);
         }
     }
+    /* Phase 4: the third actor's hold animation (on a copy of the donor). */
+    {
+        Donor c;
+        int hold_ok = donor_copy(&d, &c) &&
+                      donor_add_hold(&c, DONOR_IDLE_SUB, DONOR_SUB_HOLD, DONOR_HOLD_FRAMES);
+        const DonorBlob* h = hold_ok ? find_anim(&c, DONOR_SUB_HOLD) : NULL;
+        const DonorBlob* src = find_anim(&d, DONOR_IDLE_SUB);
+        int empty = 0;
+        uint32_t f0 = 0;
+        if (h && src) {
+            const uint8_t* b = c.image + h->off;
+            f0 = h->size - 8u - (uint32_t)(h->frames - 1u) * 8u;
+            for (uint32_t f = 1; f < h->frames; ++f) {
+                const uint8_t* hd = b + 8u + f0 + 8u * (f - 1u);
+                empty += hd[2] == 0 && hd[3] == 0 && (hd[4] | (hd[5] << 8)) == f;
+            }
+            hold_ok = memcmp(b + 8, d.image + src->off + 8, f0) == 0;
+        }
+        printf(",\"hold\":{\"ok\":%s,\"frames\":%u,\"size\":%u,\"frame0_bytes\":%u,"
+               "\"frame0_cmds\":%u,\"empty_frames\":%d,\"image_size\":%u}",
+               hold_ok && h ? "true" : "false", h ? h->frames : 0, h ? h->size : 0, f0,
+               h ? (unsigned)(c.image[h->off + 10] | (c.image[h->off + 11] << 8)) : 0u, empty,
+               c.image ? c.image_size : 0u);
+        if (c.image)
+            donor_free(&c);
+    }
     printf(",\"tex\":{\"ok\":%s", tex_ok ? "true" : "false");
     if (tex_ok) {
         int q3 = 0;
