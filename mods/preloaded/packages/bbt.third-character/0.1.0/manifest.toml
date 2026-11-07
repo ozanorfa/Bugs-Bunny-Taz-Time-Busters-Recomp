@@ -95,3 +95,10 @@ label = "75% (about Bugs' height)"
 [[option.choice]]
 value = "65"
 label = "65%"
+
+# The third actor's Actor_Update hook goes through bbt.shared
+# (src/mods/actor_update_hub.h).
+[[requirement]]
+feature = "p3"
+package = "bbt.shared"
+requires_feature = "actor-update"

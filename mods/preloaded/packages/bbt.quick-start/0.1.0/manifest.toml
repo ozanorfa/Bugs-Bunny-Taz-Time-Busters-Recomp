@@ -1,0 +1,68 @@
+# Quick start: shorter way from power-on to playing.
+# Selects the trusted plugin compiled into this game from
+# src/mods/quick_start.c. This package contains no game data.
+format_version = 11
+id = "bbt.quick-start"
+version = "0.1.0"
+name = "Quick Start"
+author = "BugsBunnyTazRecomp project"
+description = "Skips the start-up logos and the long new-game intro, and shortens the loading screens and disc reads."
+resolver = "declarative"
+
+[[target]]
+game_id = "SLUS-01144"
+
+[[feature]]
+id = "quick-start"
+name = "Quick start"
+description = "Skips the three company logos at power-on (about 16 seconds, they cannot be skipped by a button) and the new-game intro cutscene (about 6 minutes; ✕ also skips it), so NEW GAME -> START GAME goes straight to Granwich. Shortens every loading screen: the closing circle normally takes as long as the original CD drive would need for the level (Granwich about 7 seconds); with this option it closes in a third of a second and the load lasts only as long as the disc reads. CD speed makes those reads faster (2x halves them); 2x, 3x and 4x were tested on every load path tried, 6x and 8x froze the game at the title screen, so 4x is the highest choice. In a netplay match every player needs the same choice."
+group = "Quality of Life"
+default_enabled = false
+
+[[plugin]]
+feature = "quick-start"
+id = "bbt.quick-start"
+
+[[option]]
+feature = "quick-start"
+id = "skip_logos"
+label = "Skip the start-up logos"
+type = "boolean"
+default = "true"
+
+[[option]]
+feature = "quick-start"
+id = "skip_intro"
+label = "Skip the new-game intro"
+type = "boolean"
+default = "true"
+
+[[option]]
+feature = "quick-start"
+id = "short_loading"
+label = "Shorter loading screens"
+type = "boolean"
+default = "true"
+
+[[option]]
+feature = "quick-start"
+id = "cd_speed"
+label = "CD speed"
+type = "choice"
+default = "2"
+
+[[option.choice]]
+value = "1"
+label = "1x (the original drive)"
+
+[[option.choice]]
+value = "2"
+label = "2x"
+
+[[option.choice]]
+value = "3"
+label = "3x"
+
+[[option.choice]]
+value = "4"
+label = "4x (fastest tested)"

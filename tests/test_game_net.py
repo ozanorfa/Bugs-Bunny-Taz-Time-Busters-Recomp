@@ -11,8 +11,31 @@ our mods"):
   Granwich with the mod active on both, and the peers' machine digests
   agree on every tick both logged;
 - one peer with the mod and one without: the match never starts (both wait
-  at tick 0 with "LAN content differs between peers").
-Not covered yet (Phase 6 step N3): replays of our hooks. On localhost the
+  at tick 0 with "LAN content differs between peers");
+- both peers also on Quick start (defaults: no logos, no intro, short
+  loading screens, 2x CD speed): it acts on both peers alike and the
+  digests still agree.
+- both peers on Quick start and "Two views" (bbt.own-view), each in a
+  hidden OpenGL window: in Granwich every peer draws its own player's view
+  full screen (psx_mod_render_local_view: the host Bugs' view 0, the guest
+  Taz's view 1), no own-view draw is refused, the authoritative frame is
+  still the shared split screen while the presented image has no split, and
+  the digests agree. The GL scale is capped at 2x with the framework's test
+  variables (PSX_GL_MAX_DIM, PSX_GL_HIRES_WINDOW=0): these peers otherwise
+  start at 8x, where each own-view draw costs ~80 ms (BUGS.md #35).
+- three peers (host as relay, PSX_NET_SLOTS=3) with the third character
+  ("p3") and Quick start, a 3-player copy of game.toml (multitap on port
+  2): the third actor spawns once on every peer, peer 2's own pad is seat
+  2 (the plugin's input record shows its Right on every peer) and moves the
+  third actor the same way on every peer, the digests agree.
+- three peers on the third character, Quick start and "Two views", in
+  hidden OpenGL windows: the view count becomes 3 on every peer and each
+  peer draws its own seat's view full screen (local_view_0 / 1 / 2), no
+  own-view draw hits the watchdog, the presented images have no split, the
+  digests agree.
+Replays of our hooks inside a level do not happen: the level music is an XA
+stream, during which the framework runs lockstep and refuses every rollback
+(NOTES.md "N3: rollback and three peers"). On localhost the
 peers rarely mispredict, and the framework's forced-rollback self-test
 (PSX_RB_DET_SELFTEST) slows the menus' CD loads so much that the menu
 presses below miss (NOTES.md "LAN netplay with our mods").
@@ -20,6 +43,7 @@ Logs go to build-tests/out/net-*/peer<slot>/game.log."""
 from __future__ import annotations
 
 import random
+import struct
 import sys
 import time
 import unittest
@@ -28,11 +52,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
 from bbt.client import pad  # noqa: E402
-from bbt.game import LEVEL_GRANNY, TYPE_TAZ, Player  # noqa: E402
+from bbt.game import LEVEL_GRANNY, TYPE_TAZ, Player, three_player_toml  # noqa: E402
 from bbt.net import CONTENT_DIFFERS, NetMatch  # noqa: E402
+from bbt.png import dark_rows, row_means  # noqa: E402
 
 T = "bbt.third-character.trca01."
+Q = "bbt.quick-start."
 TRCA01 = {"trca01": True}
+QUICK = {"trca01": True, "bbt.quick-start/quick-start": True}
+V = "bbt.own-view.two-views."
+A3 = "bbt.third-character.p3-actor."
+OWN = {"bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True}
+SMALL_GL = {"PSX_GL_MAX_DIM": "2048", "PSX_GL_HIRES_WINDOW": "0", "SDL_AUDIODRIVER": "dummy"}
 
 
 class _Run:
@@ -115,6 +146,208 @@ class NetplayWithMods(unittest.TestCase):
                 self.assertEqual(peer.status()["tick"], 0, f"peer {peer.slot} started playing")
         for peer in m.peers:
             self.assertIn(CONTENT_DIFFERS, peer.log_text(), f"peer {peer.slot} did not say why")
+
+
+    def test_3_quick_start_in_a_match(self):
+        build = need_build()
+        with NetMatch(build, "net-quick-start", [QUICK, QUICK]) as m:
+            host, guest = m.peers
+            c, p = host.client, Player(_Run(host.client))
+            self.assertTrue(c.wait_until(lambda: p.level() == 2, 3000, 2), "no language screen")
+            c.wait_frames(200)
+            self.assertTrue(p.language_to_title(), "no title")
+            c.wait_frames(240); c.press(pad("start")); c.wait_frames(120)
+            c.press(pad("cross")); c.wait_frames(60)          # NEW GAME
+            c.press(pad("down")); c.wait_frames(30)
+            c.press(pad("cross")); c.wait_frames(90)          # TWO PLAYERS
+            self.assertTrue(p.two_player_mode(), "TWO PLAYERS not selected")
+            c.press(pad("cross"))                             # START GAME
+            self.assertTrue(c.wait_until(lambda: p.level() == LEVEL_GRANNY and p.players_ready(),
+                                         3000, 2), "Granwich did not load")
+            loaded_at = c.frame()
+            c.wait_frames(300)
+            m.check_alive()
+            for peer in m.peers:
+                cs = peer.client.counters()
+                got = {k: cs.get(Q + k) for k in ("logos_skipped", "intro_skipped", "cd_speed")}
+                self.assertEqual(got, {"logos_skipped": 1, "intro_skipped": 1, "cd_speed": 2},
+                                 f"peer {peer.slot}")
+                self.assertGreaterEqual(cs.get(Q + "loading_shortened", 0), 1, f"peer {peer.slot}")
+                self.assertEqual(peer.status()["desync"], 0, f"peer {peer.slot}")
+        compared, bad = m.compare_digests()
+        last = max(set(host.digests()) & set(guest.digests()), default=0)
+        print(f"\n    {compared} ticks compared up to {last}, Granwich at ~{loaded_at}", file=sys.stderr)
+        self.assertEqual(bad, [], "the peers' machine digests differ")
+        self.assertGreater(last, loaded_at + 100, "no digests after the level load")
+
+    def test_4_each_peer_shows_its_own_view(self):
+        build = need_build()
+        with NetMatch(build, "net-own-view", [OWN, OWN], window=True, env=SMALL_GL) as m:
+            host, guest = m.peers
+            c, p = host.client, Player(_Run(host.client))
+            self.assertTrue(c.wait_until(lambda: p.level() == 2, 3000, 2), "no language screen")
+            c.wait_frames(200)
+            self.assertTrue(p.language_to_title(), "no title")
+            c.wait_frames(240); c.press(pad("start")); c.wait_frames(120)
+            c.press(pad("cross")); c.wait_frames(60)          # NEW GAME
+            c.press(pad("down")); c.wait_frames(30)
+            c.press(pad("cross")); c.wait_frames(90)          # TWO PLAYERS
+            self.assertTrue(p.two_player_mode(), "TWO PLAYERS not selected")
+            c.press(pad("cross"))                             # START GAME
+            self.assertTrue(c.wait_until(lambda: p.level() == LEVEL_GRANNY and p.players_ready(),
+                                         3000, 2), "Granwich did not load")
+            loaded_at = c.frame()
+            for _ in range(6):                                # the opening dialogs
+                c.press(pad("cross")); c.wait_frames(60)
+            host.client.hold(pad("up")); guest.client.hold(pad("up")); c.wait_frames(120)
+            host.client.release(); guest.client.release(); c.wait_frames(60)
+            m.check_alive()
+
+            def own(peer) -> dict:
+                return {k[len(V):]: v for k, v in peer.client.counters().items() if k.startswith(V)}
+
+            for peer, mine, other in ((host, "local_view_0", "local_view_1"),
+                                      (guest, "local_view_1", "local_view_0")):
+                k = own(peer)
+                with self.subTest(peer=peer.slot):
+                    self.assertGreater(k.get(mine, 0), 60, f"own views drawn: {k}")
+                    self.assertEqual(k.get(other, 0), 0, f"drew the other player's view: {k}")
+                    self.assertEqual(k.get("local_refused", 0), 0, f"own-view draws refused: {k}")
+                    st = peer.client.send({"cmd": "render_pass_stats"})
+                    self.assertEqual(st.get("watchdog"), 0, "an own-view draw ran into the watchdog")
+                    self.assertEqual(peer.status()["desync"], 0)
+            out = m.dir
+            for peer in m.peers:
+                shared = out / f"shared{peer.slot}.png"
+                shown = out / f"shown{peer.slot}.png"
+                peer.client.screenshot(shared.resolve())        # authoritative VRAM: the split
+                peer.client.send({"cmd": "screenshot_hires", "path": str(shown.resolve())}, timeout=60.0)
+                split = dark_rows(row_means(shared), 0.4, 0.6)
+                with self.subTest(peer=peer.slot):
+                    self.assertGreaterEqual(len(split), 2, "the shared frame has no split-screen divider")
+                    self.assertEqual(dark_rows(row_means(shown), 0.4, 0.6), [],
+                                     "the presented image is still split")
+        compared, bad = m.compare_digests()
+        last = max(set(host.digests()) & set(guest.digests()), default=0)
+        print(f"\n    {compared} ticks compared up to {last}, Granwich at ~{loaded_at}", file=sys.stderr)
+        self.assertEqual(bad, [], "the peers' machine digests differ")
+        self.assertGreater(last, loaded_at + 100, "no digests after the level load")
+
+    def test_5_three_peers_with_the_third_character(self):
+        build = need_build()
+        three = {"p3": True, "bbt.quick-start/quick-start": True}
+        toml = three_player_toml(config.game_toml(), config.out_dir() / "game_3p_net.toml")
+        with NetMatch(build, "net-three-peers", [three, three, three], toml=toml) as m:
+            host, _, third = m.peers
+            c, p = host.client, Player(_Run(host.client))
+            self.assertTrue(c.wait_until(lambda: p.level() == 2, 6000, 2), "no language screen")
+            c.wait_frames(200)
+            self.assertTrue(p.language_to_title(), "no title")
+            c.wait_frames(240); c.press(pad("start")); c.wait_frames(120)
+            c.press(pad("cross")); c.wait_frames(60)          # NEW GAME
+            c.press(pad("down")); c.wait_frames(30)
+            c.press(pad("cross")); c.wait_frames(90)          # TWO PLAYERS
+            self.assertTrue(p.two_player_mode(), "TWO PLAYERS not selected")
+            c.press(pad("cross"))                             # START GAME
+            self.assertTrue(c.wait_until(lambda: p.level() == LEVEL_GRANNY and p.players_ready(),
+                                         6000, 2), "Granwich did not load")
+            loaded_at = c.frame()
+            self.assertTrue(c.wait_until(lambda: all(pe.client.counters().get(A3 + "spawned")
+                                                     for pe in m.peers), 900, 5),
+                            "no third actor on every peer")
+            for _ in range(10):                               # the opening dialogs
+                c.press(pad("cross")); c.wait_frames(150)
+            record = int(third.client.mod_cmd("bbt.p3", "show")["record"], 16)
+            third.client.hold(pad("right")); c.wait_frames(10)
+            held = [struct.unpack_from("<H", pe.client.read(record, 4), 2)[0] for pe in m.peers]
+            third.client.release(); c.wait_frames(20)
+            self.assertEqual(held, [0x2000] * 3, "seat 2's Right is not in the third input record")
+            start = [clone_pos(pe) for pe in m.peers]
+            third.client.hold(pad("right")); c.wait_frames(90); third.client.release()
+            c.wait_frames(120)
+            end = [clone_pos(pe) for pe in m.peers]
+            # read a few ticks apart on each peer: equal machines are what
+            # the digests below prove; here the positions must just agree
+            self.assertTrue(all(moved(e, end[0]) <= 32 for e in end),
+                            f"the peers see the third actor at {end}")
+            self.assertGreater(moved(start[0], end[0]), 200, "peer 2 did not move the third actor")
+            m.check_alive()
+            for pe in m.peers:
+                cs = pe.client.counters()
+                with self.subTest(peer=pe.slot):
+                    self.assertEqual(pe.status()["players"], 3)
+                    self.assertEqual(pe.status()["desync"], 0)
+                    self.assertEqual(cs.get(A3 + "spawned"), 1)
+        compared, bad = m.compare_digests()
+        last = max(set.intersection(*(set(pe.digests()) for pe in m.peers)), default=0)
+        print(f"\n    {compared} ticks compared up to {last}, Granwich at ~{loaded_at}", file=sys.stderr)
+        self.assertEqual(bad, [], "the peers' machine digests differ")
+        self.assertGreater(last, loaded_at + 100, "no digests after the level load")
+
+    def test_6_three_peers_each_see_their_own_view(self):
+        build = need_build()
+        feats = {"p3": True, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True}
+        toml = three_player_toml(config.game_toml(), config.out_dir() / "game_3p_net_own.toml")
+        with NetMatch(build, "net-three-own-views", [feats] * 3, toml=toml, window=True,
+                      env=SMALL_GL) as m:
+            host = m.peers[0]
+            c, p = host.client, Player(_Run(host.client))
+            self.assertTrue(c.wait_until(lambda: p.level() == 2, 6000, 2), "no language screen")
+            c.wait_frames(200)
+            self.assertTrue(p.language_to_title(), "no title")
+            c.wait_frames(240); c.press(pad("start")); c.wait_frames(120)
+            c.press(pad("cross")); c.wait_frames(60)          # NEW GAME
+            c.press(pad("down")); c.wait_frames(30)
+            c.press(pad("cross")); c.wait_frames(90)          # TWO PLAYERS
+            c.press(pad("cross"))                             # START GAME
+            self.assertTrue(c.wait_until(lambda: p.level() == LEVEL_GRANNY and p.players_ready(),
+                                         6000, 2), "Granwich did not load")
+            loaded_at = c.frame()
+            self.assertTrue(c.wait_until(lambda: all(pe.client.counters().get(V + "views_3")
+                                                     for pe in m.peers), 900, 5),
+                            "no third view on every peer")
+            for _ in range(10):                               # the opening dialogs
+                c.press(pad("cross")); c.wait_frames(150)
+            for pe in m.peers:
+                pe.client.hold(pad("up"))
+            c.wait_frames(120)
+            for pe in m.peers:
+                pe.client.release()
+            c.wait_frames(60)
+            m.check_alive()
+            for pe in m.peers:
+                k = {kk[len(V):]: v for kk, v in pe.client.counters().items() if kk.startswith(V)}
+                mine = f"local_view_{pe.slot}"
+                others = [f"local_view_{v}" for v in range(3) if v != pe.slot]
+                shared, shown = m.dir / f"shared{pe.slot}.png", m.dir / f"shown{pe.slot}.png"
+                pe.client.screenshot(shared.resolve())
+                pe.client.send({"cmd": "screenshot_hires", "path": str(shown.resolve())}, timeout=60.0)
+                with self.subTest(peer=pe.slot):
+                    self.assertGreater(k.get(mine, 0), 300, f"own views drawn: {k}")
+                    self.assertEqual([k.get(o, 0) for o in others], [0, 0], f"drew another view: {k}")
+                    self.assertEqual(pe.client.send({"cmd": "render_pass_stats"}).get("watchdog"), 0,
+                                     "an own-view draw ran into the watchdog")
+                    self.assertEqual(pe.status()["desync"], 0)
+                    self.assertGreaterEqual(len(dark_rows(row_means(shared), 0.2, 0.8)), 2,
+                                            "the shared frame has no split-screen dividers")
+                    self.assertEqual(dark_rows(row_means(shown), 0.2, 0.8), [],
+                                     "the presented image is still split")
+        compared, bad = m.compare_digests()
+        last = max(set.intersection(*(set(pe.digests()) for pe in m.peers)), default=0)
+        print(f"\n    {compared} ticks compared up to {last}, Granwich at ~{loaded_at}", file=sys.stderr)
+        self.assertEqual(bad, [], "the peers' machine digests differ")
+        self.assertGreater(last, loaded_at + 100, "no digests after the level load")
+
+
+def clone_pos(peer) -> tuple:
+    """Position of the third actor (bbt.p3actor state + 4) on one peer."""
+    state = int(peer.client.mod_cmd("bbt.p3actor", "show")["state"], 16)
+    a = peer.client.u32(state + 4)
+    return struct.unpack("<3h", peer.client.read(a + 0xFC, 6))
+
+
+def moved(a, b) -> int:
+    return abs(a[0] - b[0]) + abs(a[2] - b[2])
 
 
 if __name__ == "__main__":

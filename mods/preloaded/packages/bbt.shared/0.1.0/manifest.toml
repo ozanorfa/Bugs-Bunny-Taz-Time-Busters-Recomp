@@ -1,0 +1,28 @@
+# Shared game hooks (internal). One function override several of our
+# features need: the framework refuses two overrides on one address, and a
+# refused one fails the whole mod plan. Each feature that needs it requires
+# it ([[requirement]]), so it runs exactly while one of them is on. Selects
+# the trusted plugin compiled into this game from src/mods/actor_update_hub.c.
+# This package contains no game data.
+format_version = 11
+id = "bbt.shared"
+version = "0.1.0"
+name = "Shared game hooks (internal)"
+author = "BugsBunnyTazRecomp project"
+description = "Internal: hooks shared by the Own View and Third Character features. Turned on by them when needed."
+resolver = "declarative"
+
+[[target]]
+game_id = "SLUS-01144"
+
+[[feature]]
+id = "actor-update"
+name = "Shared Actor_Update hook (internal)"
+description = "Internal. One override of the game's Actor_Update for the features that need it (own view, third player). Turned on automatically by those features."
+group = "Internal"
+default_enabled = false
+hidden = true
+
+[[plugin]]
+feature = "actor-update"
+id = "bbt.shared.actor-update"

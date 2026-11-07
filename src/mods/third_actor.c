@@ -67,6 +67,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "actor_update_hub.h"
 #include "clone_res.h"
 #include "cpu_state.h"
 #include "donor_runtime.h"
@@ -144,14 +145,13 @@
 static const uint32_t kActorPassGuard[4] = {
     0x27BDF778u, 0xAFB20868u, 0x00809021u, 0x3C028009u,
 };
-/* addiu sp,sp,-0x1c8 / sw s4,0x1b0(sp) / move s4,a0 / lui t7,0x1f80 */
-static const uint32_t kActorUpdateGuard[4] = {
-    0x27BDFE38u, 0xAFB401B0u, 0x0080A021u, 0x3C0F1F80u,
-};
+/* Actor_Update (ADDR_ACTOR_UPDATE) is hooked through the shared hub,
+ * src/mods/actor_update_hub.c: our features cannot each override it. */
 
 /* Host side: a pure function of the disc once prepared. */
 static uint32_t g_block;           /* guest address of the mod block, 0 if none */
 static int g_prepared;             /* 0 = not yet, 1 = ready, -1 = unusable */
+static int g_active;               /* this plugin is in the session's plan */
 static uint8_t* g_image;           /* donor image: relocated for g_block, records patched */
 static uint32_t g_image_size;
 static CloneResLayout g_layout;
@@ -278,8 +278,11 @@ static void read_size_option(void)
     g_scale = (int16_t)(0x1000 * pct / 100);
 }
 
+static const BbtActorUpdateHook kInputHook;
 static void activate(void)
 {
+    g_active = 1;
+    bbt_actor_update_hook(BBT_ACTOR_HOOK_INPUT, &kInputHook);
     read_size_option();
     if (!g_block)
         g_block = psx_mod_alloc_guest_memory(BLK_SIZE, 16);
@@ -535,7 +538,12 @@ static int actor_pass_wrap(CPUState* cpu)
         a = 0;
         count("gone", 1);
     }
-    if (!a && (psx_mod_read_byte(ADDR_MODE_FLAGS) & MODE_TWO_PLAYER)) {
+    /* Not inside a netplay own-view draw (bbt.own-view: a sandboxed 1-view
+     * rerun of a frame): a spawn uploads textures through libgpu, whose
+     * queue needs interrupts a pass never takes (the rerun hit the watchdog
+     * once per peer, on the frame the clone appeared). That one image goes
+     * without the clone; the shared game spawns it as usual. */
+    if (!a && (psx_mod_read_byte(ADDR_MODE_FLAGS) & MODE_TWO_PLAYER) && !psx_mod_local_view_scope()) {
         const uint32_t taz = placed_taz();
         if (source_pristine(taz)) {
             spawn(cpu, taz);
@@ -559,14 +567,15 @@ static int actor_pass_wrap(CPUState* cpu)
     return 1;
 }
 
-/* Wrap of Actor_Update(actor): the clone reads the third player's input. */
-static int actor_update_wrap(CPUState* cpu)
+/* Actor_Update(actor) through the shared hub (actor_update_hub.h): the clone
+ * reads the third player's input. Player 2's slot is kept in the guest block
+ * for the length of the call. */
+static int input_pre(CPUState* cpu, uint32_t a, uint32_t* save)
 {
-    const uint32_t a = cpu->gpr[GPR_A0];
-    if (!g_block || g_prepared != 1 || a == 0 || a != st_get(ST_ACTOR)) {
-        func_override_call_original(cpu);
-        return 1;
-    }
+    (void)cpu;
+    (void)save;
+    if (!g_block || g_prepared != 1 || a == 0 || a != st_get(ST_ACTOR))
+        return 0;
     const uint32_t rec = bbt_p3_record();
     uint8_t p2[INPUT_FIELDS], p3[INPUT_FIELDS];
     read_bytes(ADDR_INPUT_SLOT1, p2, INPUT_FIELDS);
@@ -576,7 +585,16 @@ static int actor_update_wrap(CPUState* cpu)
     else
         memset(p3, 0, sizeof p3);
     write_bytes(ADDR_INPUT_SLOT1, p3, INPUT_FIELDS);
-    func_override_call_original(cpu);
+    return 1;
+}
+
+static void input_post(CPUState* cpu, uint32_t a, uint32_t save)
+{
+    (void)cpu;
+    (void)a;
+    (void)save;
+    const uint32_t rec = bbt_p3_record();
+    uint8_t p2[INPUT_FIELDS], p3[INPUT_FIELDS];
     /* What the update consumed stays consumed for the third player. */
     if (rec) {
         read_bytes(ADDR_INPUT_SLOT1, p3, INPUT_FIELDS);
@@ -585,7 +603,22 @@ static int actor_update_wrap(CPUState* cpu)
     read_bytes(g_block + BLK_STATE + ST_SLOT, p2, INPUT_FIELDS);
     write_bytes(ADDR_INPUT_SLOT1, p2, INPUT_FIELDS);
     count("updates", 1);
-    return 1;
+}
+
+static const BbtActorUpdateHook kInputHook = {input_pre, input_post};
+
+uint32_t bbt_p3_actor(void)
+{
+    if (!g_active || !g_block || g_prepared != 1 || st_get(ST_MAGIC) != STATE_MAGIC)
+        return 0;
+    const uint32_t a = st_get(ST_ACTOR);
+    return in_main_ram(a) && linked(a) ? a : 0;
+}
+
+static void session_reset(void)
+{
+    g_active = 0;
+    bbt_actor_update_hook(BBT_ACTOR_HOOK_INPUT, NULL);
 }
 
 /* Debug command (debug-server thread): host state that is immutable once
@@ -630,8 +663,6 @@ PSX_MOD_CONSTRUCTOR(register_bbt_third_actor)
     (void)psx_mod_register_function_override(
         PLUGIN_ACTOR ":actor-pass", ADDR_ACTOR_PASS,
         actor_pass_wrap, kActorPassGuard, 4, FO_CREDIT_SELF);
-    (void)psx_mod_register_function_override(
-        PLUGIN_ACTOR ":actor-update", ADDR_ACTOR_UPDATE,
-        actor_update_wrap, kActorUpdateGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_session_reset_plugin(PLUGIN_ACTOR, session_reset);
     (void)psx_mod_register_command("bbt.p3actor", p3actor_command);
 }

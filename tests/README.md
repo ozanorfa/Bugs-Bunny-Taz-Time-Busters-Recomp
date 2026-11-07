@@ -66,6 +66,30 @@ run against `build-release`, which holds your own mod selection
   it plays whole idle loops (no trembling) and still answers at once; seat 2 drives only it; ✕ □ ○ △ and the air spin land it on the floor
   drawn (the spin with a tornado); level jumps replace it; a savestate
   brings it back; random play on all three seats keeps the game running.
+- `test_game_quickstart.py` — Quick start (`bbt.quick-start`, defaults):
+  no logo levels and the language screen at once; START GAME reaches
+  Granwich without the intro ever running; afterwards both pads move their
+  character, the HUD has set itself up, no cinema bars, the pause screen
+  opens and closes; a level jump takes less than half the stock 470 frames
+  at the default 2x CD speed. With skip_logos off the logos are shown.
+- `test_game_ownview.py` — the engine's own two views (experiment
+  `bbt.own-view` "two-views", with Quick start): Granwich runs with the
+  view count 2, view 0 follows Bugs and view 1 Taz, each pad moves only its
+  own character, and every frame that draws the world sets the top-half and
+  the bottom-half draw area (GP0 dump, `gpu_frame_dump`). Each view has a
+  single-player camera: Taz walks more than 6000 units from Bugs (stock 2P
+  freezes him at about 3050), each camera looks at its own player, and each
+  pad's "up" turns its character to its own camera's forward direction.
+  While two views run, the game presents from the main loop (frame wrap),
+  not from its VSync callback, and still makes a frame every 2 vblanks
+  while both players run (game.toml `[timing]` cycle scale gated on the
+  view count).
+- `test_game_ownview3.py` — three views (build-p3, 3-player game.toml, the
+  third player "p3" + "Two views" + Quick start): the view count becomes 3,
+  the views follow Bugs, Taz and the third actor with single-player
+  cameras, seat 2 turns the third actor to camera 2's forward, the game
+  keeps ≥ 0.44 frames per vblank with everyone running, the shared
+  Actor_Update feature is activated implicitly.
 - `test_game_net.py` — netplay with our mods (`build-net`): two headless
   peers on 127.0.0.1 in a rollback match (`--netplay`, `PSX_NET_MODE=rollback`),
   each from a folder of its own under `build-tests/out/net-*/` (a link to
@@ -73,7 +97,29 @@ run against `build-release`, which holds your own mod selection
   used. Both on "Taz becomes the Transylvania enemy": the host plays into
   Granwich, the mod is active on both peers, and the machine digests both
   logged every 32 ticks agree. One peer with the mod and one without: the
-  match never starts ("LAN content differs between peers"). About 35 s.
+  match never starts ("LAN content differs between peers"). Both also on
+  Quick start: it acts alike on both peers and the digests agree. Both on
+  Quick start and "Two views", each in a hidden OpenGL window
+  (`NetMatch(window=True)`, GL scale capped at 2x with `PSX_GL_MAX_DIM`):
+  each peer draws its own player's view full screen
+  (`psx_mod_render_local_view`, counters `local_view_0` / `local_view_1`),
+  none refused, the authoritative frame (`screenshot`) still split and the
+  presented one (`screenshot_hires`) not (row brightness, `bbt/png.py`),
+  digests equal. Three peers (host as relay, `NetMatch` with three feature
+  sets) on the third character and Quick start with a 3-player game.toml:
+  the third actor spawns on every peer, the third peer's own pad (seat 2)
+  drives it the same way everywhere, digests equal. Three peers on the
+  third character + "Two views" in hidden windows: each peer draws its own
+  seat's view (`local_view_0/1/2`), no watchdog, no split shown, digests
+  equal. About 3.5 min in all.
+- `test_game_lanroom.py` — a LAN room through the real launcher (`build-net`):
+  two launchers driven by recomp-ui's script hook (`LNG_SCRIPT`, hidden
+  windows), host Host Lobby -> Create Lobby, guest Join Direct
+  127.0.0.1:7777, host PLAY. The host selected the Phase 3 mod and Quick
+  start, the guest nothing: both run the host's mods, the digests agree,
+  and the guest's own selection is unchanged. Click positions are for the
+  1100x750 launcher layout; when the launcher's layout changes, update them
+  from the screenshots in `build-tests/out/lanroom/`. About 75 s.
 
 A game test takes 2–4 minutes (headless runs at ~74 frames/s; a cold boot to
 Granwich is ~5,000 frames). Screenshots of every stage are in

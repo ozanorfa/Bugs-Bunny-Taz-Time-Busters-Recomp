@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config, game  # noqa: E402
 from bbt.iso9660 import Iso  # noqa: E402
+from bbt.png import dark_rows, row_means  # noqa: E402
 
 sys.path.insert(0, str(config.PROJECT / "tools" / "bouze"))
 import bouze  # noqa: E402
@@ -258,6 +259,26 @@ class GameRunHelpers(unittest.TestCase):
         self.assertEqual(t["package"], [{"id": "bbt.third-character"}])
         self.assertEqual({f["id"]: f["enabled"] for f in t["feature"]}, {"trca01": True, "swap-test": False})
         self.assertEqual(tomllib.loads(game.state_toml({})), {"format_version": 2})
+        # other packages and option values, as the runtime writes them
+        t = tomllib.loads(game.state_toml({
+            "trca01": True,
+            "bbt.quick-start/quick-start": {"enabled": True, "values": {"skip_intro": "false"}}}))
+        self.assertEqual(t["package"], [{"id": "bbt.third-character"}, {"id": "bbt.quick-start"}])
+        qs = [f for f in t["feature"] if f["package_id"] == "bbt.quick-start"]
+        self.assertEqual(qs, [{"package_id": "bbt.quick-start", "id": "quick-start", "enabled": True,
+                               "values": {"skip_intro": "false"}}])
+
+    def test_game_toml_copy(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "proj" / "game.toml"
+            src.parent.mkdir()
+            src.write_text('[game]\nplayers = 2\nexe = "disc/X.EXE"\ndisc = "/abs/d.cue"\n\n[controller]\ndefault_mode = "digital"\n')
+            dst = game.game_toml_copy(src, Path(d) / "out" / "game.toml")
+            text = dst.read_text()
+            self.assertIn(f'exe = "{(src.parent / "disc/X.EXE").resolve().as_posix()}"', text)
+            self.assertIn('disc = "/abs/d.cue"', text)
+            self.assertIn("players = 2", text)
+            self.assertIn('default_mode = "digital"', text)
 
     def test_state_restore_after_an_interrupted_run(self):
         with tempfile.TemporaryDirectory() as d:
@@ -283,6 +304,49 @@ class GameRunHelpers(unittest.TestCase):
         finally:
             if old is not None:
                 os.environ["BBT_ALLOW_RELEASE"] = old
+
+
+def _png(rows: list[bytes], width: int, bpp: int, filters: list[int]) -> bytes:
+    """A PNG with each row stored with the given filter type (unfiltered
+    pixel bytes in, filtered on the way out)."""
+    import zlib
+
+    def paeth(a, b, c):
+        p = a + b - c
+        pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+        return a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+
+    raw, prev = b"", bytes(width * bpp)
+    for row, f in zip(rows, filters):
+        out = bytearray()
+        for i, v in enumerate(row):
+            left = row[i - bpp] if i >= bpp else 0
+            up, up_left = prev[i], (prev[i - bpp] if i >= bpp else 0)
+            pred = (0, left, up, (left + up) >> 1, paeth(left, up, up_left))[f]
+            out.append((v - pred) & 0xFF)
+        raw += bytes([f]) + bytes(out)
+        prev = row
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    ihdr = struct.pack(">IIBBBBB", width, len(rows), 8, 2 if bpp == 3 else 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+class PngRows(unittest.TestCase):
+    def test_row_means_through_every_filter(self):
+        width = 4
+        rows = [bytes([10, 20, 30] * width), bytes([0, 0, 0] * width), bytes([200, 100, 0] * width),
+                bytes([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), bytes([255] * 12)]
+        with tempfile.TemporaryDirectory() as d:
+            for bpp in (3, 4):
+                packed = [r if bpp == 3 else b"".join(r[i:i + 3] + b"\xff" for i in range(0, 12, 3))
+                          for r in rows]
+                path = Path(d) / f"t{bpp}.png"
+                path.write_bytes(_png(packed, width, bpp, [0, 1, 2, 3, 4]))
+                means = row_means(path)
+                self.assertEqual([round(m, 3) for m in means], [20.0, 0.0, 100.0, 6.5, 255.0])
+                self.assertEqual(dark_rows(means, 0.0, 1.0), [0.2])
 
 
 class NetHelpers(unittest.TestCase):

@@ -43,6 +43,22 @@ overlay_cache = true
 renderer = "opengl"
 aspect_ratio = "4:3"
 
+# Two / three views (mod package bbt.own-view, NOTES.md "Two views at full
+# speed"): the game logic advances once per frame (fixed step), and with the
+# engine's second view a frame takes ~3.6 vblanks of CPU instead of <= 2, so
+# the whole game ran at ~55% speed. While the view count byte 0x8008DE00 is 2
+# or 3 ((byte & 0xFE) == 2; only that mod sets it, stock is always 1) game code
+# is charged a quarter of its cycles, so a multi-view frame fits the game's
+# 2-vblank pacing again (2 views: every frame; 3 views: 0.475 frames per
+# vblank, the rest is emulated GPU time, which the scale does not touch). The gate is judged at
+# every vblank edge, so netplay peers and rollback agree (docs/config_schema.md
+# "Timing block"); the scale is part of the netplay fingerprint.
+[timing]
+guest_cycle_scale = 4
+guest_cycle_scale_gate = [
+  { addr = 0x8008DE00, size = 1, mask = 0xFE, value = 2 },
+]
+
 [controller]
 default_mode = "digital"
 

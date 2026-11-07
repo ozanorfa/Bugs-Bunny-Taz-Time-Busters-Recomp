@@ -111,17 +111,30 @@ def _peer_folder(build: Path, exe: Path, folder: Path, features: dict[str, bool]
 class NetMatch:
     """`with NetMatch(build, "name", [features of slot 0, of slot 1, ...]) as m:`
 
+    Two peers dial each other; with three or more, slot 0 is the hub (host
+    as relay: no --net-peer) and every other slot dials it, all with
+    PSX_NET_SLOTS = the peer count (psx_netplay.c: slot 0, 3+ slots, no
+    peer -> rnet_session_start_lan_hub).
+
     mode: "rollback" (the launcher's default) or "delay" (delay-sync).
-    env: extra environment for every peer (e.g. PSX_RB_DET_SELFTEST)."""
+    env: extra environment for every peer (e.g. PSX_RB_DET_SELFTEST).
+    window: run each peer in a hidden OpenGL window (`--hidden-window
+    --renderer opengl`) instead of headless, so the presenter exists (an own
+    view drawn with psx_mod_render_local_view needs it).
+    settings: a settings.toml copied into every peer's folder (else the
+    runtime's defaults)."""
 
     def __init__(self, build: Path, name: str, features: list[dict[str, bool]],
-                 toml: Path | None = None, mode: str = "rollback", env: dict | None = None):
+                 toml: Path | None = None, mode: str = "rollback", env: dict | None = None,
+                 window: bool = False, settings: Path | None = None):
         self.build = Path(build)
         self.name = name
         self.features = features
         self.toml = Path(toml) if toml else config.game_toml()
         self.mode = mode
         self.env = env or {}
+        self.window = window
+        self.settings = Path(settings) if settings else None
         self.dir = config.out_dir() / name
         self.peers: list[Peer] = []
 
@@ -135,20 +148,26 @@ class NetMatch:
         if self.dir.exists():
             shutil.rmtree(self.dir)
         n = len(self.features)
-        if n != 2:      # 3+ peers (host as relay) are not wired up here yet
-            raise ValueError("NetMatch runs two peers")
+        if n < 2:
+            raise ValueError("NetMatch needs two or more peers")
         udp = [free_udp_port() for _ in range(n)]
         env = dict(os.environ, PSX_DEBUG_SERVER="1", PSX_NET_MODE=self.mode, **self.env)
+        if n > 2:       # host as relay: slot 0 binds and waits, every guest dials it
+            env["PSX_NET_SLOTS"] = str(n)
         try:
             for slot, feats in enumerate(self.features):
                 peer = Peer(slot, self.dir / f"peer{slot}")
                 link = _peer_folder(self.build, exe, peer.dir, feats)
+                if self.settings:
+                    shutil.copy2(self.settings, peer.dir / "settings.toml")
                 port = free_tcp_port()
-                peer_addr = udp[1 - slot]
-                cmd = [str(link), "--game", str(self.toml.resolve()), "--disc", str(cue), "--headless",
+                peer_addr = udp[1 - slot] if n == 2 else udp[0]
+                dial = [] if (n > 2 and slot == 0) else ["--net-peer", f"127.0.0.1:{peer_addr}"]
+                display = ["--hidden-window", "--renderer", "opengl"] if self.window else ["--headless"]
+                cmd = [str(link), "--game", str(self.toml.resolve()), "--disc", str(cue), *display,
                        "--debug-port", str(port), "--memcard-dir", str((peer.dir / "cards").resolve()),
                        "--netplay", "--net-slot", str(slot),
-                       "--net-bind", f"127.0.0.1:{udp[slot]}", "--net-peer", f"127.0.0.1:{peer_addr}"]
+                       "--net-bind", f"127.0.0.1:{udp[slot]}", *dial]
                 peer._log = open(peer.log_path, "w", encoding="utf-8")
                 peer._log.write("$ " + " ".join(cmd) + "\n")
                 peer._log.flush()

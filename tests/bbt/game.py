@@ -62,15 +62,30 @@ def free_port() -> int:
 
 # ---- mod selection --------------------------------------------------------
 
-def state_toml(features: dict[str, bool]) -> str:
-    """mods/state.toml selecting features of bbt.third-character (format of
-    the runtime's own state files). Options keep their defaults."""
+DEFAULT_PACKAGE = "bbt.third-character"
+
+
+def state_toml(features: dict) -> str:
+    """mods/state.toml selecting mod features (the format the runtime writes,
+    mod_packages.cpp). A key is a feature of bbt.third-character, or
+    "<package>/<feature>"; a value is True / False, or a dict
+    {"enabled": bool, "values": {option: value}}. Options not given keep
+    their defaults."""
     lines = ["format_version = 2", ""]
-    if features:
-        lines += ["[[package]]", 'id = "bbt.third-character"', ""]
-    for fid, on in features.items():
-        lines += ["[[feature]]", 'package_id = "bbt.third-character"', f'id = "{fid}"',
-                  f"enabled = {'true' if on else 'false'}", ""]
+    entries = []
+    for key, sel in features.items():
+        pkg, _, fid = key.rpartition("/")
+        on, values = (sel.get("enabled", True), sel.get("values", {})) if isinstance(sel, dict) else (sel, {})
+        entries.append((pkg or DEFAULT_PACKAGE, fid, bool(on), values))
+    for pkg in dict.fromkeys(e[0] for e in entries):
+        lines += ["[[package]]", f'id = "{pkg}"', ""]
+    for pkg, fid, on, values in entries:
+        lines += ["[[feature]]", f'package_id = "{pkg}"', f'id = "{fid}"',
+                  f"enabled = {'true' if on else 'false'}"]
+        if values:
+            lines.append("[feature.values]")
+            lines += [f'{k} = "{v}"' for k, v in values.items()]
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -124,6 +139,28 @@ def three_player_toml(src: Path, dst: Path, multitap_port: int = 2) -> Path:
         out.append(f"multitap_port = {multitap_port}")
     elif not has_controller:
         out += ["", "[controller]", f"multitap_port = {multitap_port}"]
+    dst.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return dst
+
+
+def game_toml_copy(src: Path, dst: Path) -> Path:
+    """A copy of game.toml with [game] exe / disc made absolute, for runs
+    that may write to their game config: the launcher stores the player's
+    multitap-analog choice into the --game file on PLAY (runtime main.cpp,
+    upsert_game_toml_controller_bool), which must never be the repository's
+    game.toml."""
+    out, section = [], None
+    for line in src.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if s.startswith("[") and s.endswith("]"):
+            section = s[1:-1]
+        elif section == "game" and (s.startswith("exe ") or s.startswith("exe=") or s.startswith("disc")):
+            key, _, val = line.partition("=")
+            v = val.strip().strip('"')
+            if v and not Path(v).is_absolute():
+                line = f'{key.strip()} = "{(src.parent / v).resolve().as_posix()}"'
+        out.append(line)
+    dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text("\n".join(out) + "\n", encoding="utf-8")
     return dst
 

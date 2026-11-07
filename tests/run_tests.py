@@ -34,7 +34,8 @@ HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 TIERS = ("c-unit", "python-unit", "disc", "game")
 MODULE_PREFIX = {"python-unit": "test_unit_", "disc": "test_disc_", "game": "test_game_"}
-GAME_ORDER = ("test_game_stock", "test_game_trca01", "test_game_p3", "test_game_net")
+GAME_ORDER = ("test_game_stock", "test_game_quickstart", "test_game_ownview", "test_game_ownview3", "test_game_trca01",
+              "test_game_p3", "test_game_net", "test_game_lanroom")
 
 
 def build_tests(build_dir: Path) -> None:
