@@ -1,0 +1,9 @@
+# Same bytes on every machine: text files are checked out with LF on
+# Windows too (Git for Windows would otherwise turn them into CRLF), so a
+# Mac and a PC build of one commit compile identical sources and manifests
+# (netplay between them needs the same game; docs/WINDOWS_AND_LAN.md).
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.ico binary
+*.png binary
+*.tga binary

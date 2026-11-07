@@ -6,7 +6,9 @@ name = "BugsBunnyTaz"
 id = "SLUS-01144"
 players = 2
 exe = "disc/SLUS_011.44"
-disc = "/Users/ozanorfa/Desktop/AI_Flutter_Projects/bugs_bunny_time_busters_ai/disc/BugsBunnyTaz_TimeBusters_USA.cue"
+# Relative to the project root: the disc folder next to this repo (kept out
+# of git; same layout on every machine, docs/WINDOWS_AND_LAN.md).
+disc = "../disc/BugsBunnyTaz_TimeBusters_USA.cue"
 load_address = "0x80010200"
 entry_pc = "0x80010208"
 text_size = "0x0007E000"

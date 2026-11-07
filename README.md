@@ -63,6 +63,9 @@ Optional box art under `launcher_assets/img/` may come from
 
 ## Quick start (dev)
 
+Building on a Windows PC, and playing a LAN / Radmin VPN match between two
+machines: see [docs/WINDOWS_AND_LAN.md](docs/WINDOWS_AND_LAN.md).
+
 ```bash
 git submodule update --init --recursive
 ./psxrecomp/tools/ci/build_emitters.sh
