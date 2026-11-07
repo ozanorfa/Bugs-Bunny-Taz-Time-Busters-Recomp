@@ -132,9 +132,11 @@
  * feed the sandboxed local-view draw, whose guest effects are discarded). The
  * flip shows the frame last presented; the copy taken at the start of the
  * frame after it holds that frame's finished state. At the commit the
- * sandbox puts that copy back, sets one view following this peer's seat
- * (seat v >= 1: its camera record and globals become view 0's, its actor
- * player 1 and player 1 the partner), runs the frame function as a 1-view
+ * sandbox puts that copy back, sets one view: the one following this peer's
+ * own character, or a teammate's while that character is out (seat_view;
+ * the game swaps players 1 and 2 when Bugs goes down first). For a view v
+ * >= 1 its camera record and globals become view 0's, its actor player 1
+ * and player 1 the partner. Then it runs the frame function as a 1-view
  * game with the update walk and Camera_Update skipped (only the draws run:
  * re-running the logic in a pass hit waits on interrupts that never come,
  * e.g. the dialog actor's CD command), and sends its chains to the GPU
@@ -258,6 +260,11 @@ static const uint32_t kFrameGuard[4] = {
 #define CAM_FOLLOW_ONE      0x80u         /* follow the record's actor only */
 #define ACTOR_OFF_FLAGS24   0x24u
 #define ACTOR_FOLLOWED      0x10000u      /* set by Camera_Update on its actor */
+#define ADDR_HERO_DOWN      0x800100A2u   /* 0x10 / 0x20 Bugs / Taz died, 1 / 2 out */
+#define ADDR_BUGS_HERO      0x8008DDD0u   /* the identity-2 hero */
+#define ACTOR_OFF_PADS      0x0Cu         /* ETAT1: which pad drives the actor */
+#define ACTOR_JOYSTICK1     0x400u
+#define ACTOR_JOYSTICK2     0x800u
 #define ADDR_CAM_MODE       0x8008DD4Cu   /* bit 1: free look was on */
 #define CAM_MODE_FREE_LOOK  0x2u
 
@@ -466,6 +473,62 @@ static int draw_local_view(CPUState* cpu, void* user, uint32_t alpha)
     return 1;
 }
 
+static uint32_t copy_word(const FrameCopy* c, uint32_t addr)
+{
+    uint32_t v;
+    memcpy(&v, c->ram + (addr & (RAM_BYTES - 4u)), sizeof v);
+    return v;
+}
+
+/* Out: dead and waiting for the team's respawn, not in the world. A hero's
+ * death step marks Bugs (0x8008DDD0) with 0x800100A2 bit 0 and any other
+ * hero with bit 1 (FUN_80022510); the third actor has its own flag. */
+static int out_of_play(const FrameCopy* c, uint32_t a)
+{
+    if (!in_main_ram(a))
+        return 1;
+    if (a == bbt_p3_actor())
+        return bbt_p3_out();
+    const uint8_t down = c->ram[ADDR_HERO_DOWN & (RAM_BYTES - 1u)];
+    return a == copy_word(c, ADDR_BUGS_HERO) ? (down & 1u) != 0 : (down & 2u) != 0;
+}
+
+/* The view that shows a seat's own character, in a frame copy. Views 0 and
+ * 1 follow players 1 and 2 (FUN_80011AF0), and the game swaps those when
+ * player 1's hero is out (FUN_80022510 toggles 0x800100A4 bit 2; measured:
+ * Bugs down -> player 1 = Taz), so seat 0 / 1 is the hero driven by pad 1 /
+ * pad 2 (+0x0C Joystick1 / Joystick2), seat 2 the third actor. While a
+ * seat's character is out, the seat watches a teammate still in play (the
+ * user's choice; the stock one-screen camera moves to the survivor too). */
+static uint32_t seat_view(const FrameCopy* c, int port, uint32_t count)
+{
+    uint32_t own = 0;
+    if (port == 0 || port == 1) {
+        const uint32_t pad_bit = port == 0 ? ACTOR_JOYSTICK1 : ACTOR_JOYSTICK2;
+        for (uint32_t k = 0; k < 2u; ++k) {
+            const uint32_t a = copy_word(c, k == 0 ? ADDR_P1_ACTOR : ADDR_P2_ACTOR);
+            if (in_main_ram(a) && (copy_word(c, a + ACTOR_OFF_PADS) & pad_bit))
+                own = a;
+        }
+    } else if (port == 2) {
+        own = bbt_p3_actor();
+    }
+    uint32_t view = port > 0 && (uint32_t)port < count ? (uint32_t)port : 0u;
+    for (uint32_t v = 0; own && v < count && v < MAX_VIEWS; ++v)
+        if (copy_word(c, ADDR_FOLLOWED + 4u * v) == own) {
+            view = v;
+            break;
+        }
+    if (own && out_of_play(c, own)) {
+        for (uint32_t v = 0; v < count && v < MAX_VIEWS; ++v)
+            if (v != view && !out_of_play(c, copy_word(c, ADDR_FOLLOWED + 4u * v))) {
+                psx_mod_counter_add(PLUGIN ".local_view_teammate", 1u);
+                return v;
+            }
+    }
+    return view;
+}
+
 /* Before the flip to the buffer drawn at the last present: draw this peer's
  * own view there. */
 static void commit_local_view(CPUState* cpu)
@@ -486,15 +549,21 @@ static void commit_local_view(CPUState* cpu)
     job.frame = next_buffer(psx_mod_read_half(ADDR_PRESENTED));
     job.buffer = psx_mod_read_half(ADDR_DRAW_BUFFER) & 1u;
     const int port = psx_netplay_local_port();
-    job.view = port > 0 && (uint32_t)port < psx_mod_read_byte(ADDR_VIEW_COUNT) ? (uint32_t)port : 0u;
     job.ra = cpu->gpr[31];
     /* no copy yet, or one from before this peer's view existed (the first
      * frame after the view count rose): the shared frame shows this once */
-    if (job.frame > 2u || !g_copies[job.frame].ram || g_copies[job.frame].generation != g_generation ||
-        g_copies[job.frame].ram[ADDR_VIEW_COUNT & 0x1FFFFFu] <= job.view) {
+    if (job.frame > 2u || !g_copies[job.frame].ram || g_copies[job.frame].generation != g_generation) {
         psx_mod_counter_add(PLUGIN ".local_no_copy", 1u);
         return;
     }
+    const uint32_t copy_views = g_copies[job.frame].ram[ADDR_VIEW_COUNT & 0x1FFFFFu];
+    job.view = seat_view(&g_copies[job.frame], port, copy_views);
+    if (port > 0 && (uint32_t)port >= copy_views) {
+        psx_mod_counter_add(PLUGIN ".local_no_copy", 1u);
+        return;
+    }
+    if (job.view != (port > 0 ? (uint32_t)port : 0u))
+        psx_mod_counter_add(PLUGIN ".local_view_swapped", 1u);
     PSXModRenderPass rect;
     rect.struct_size = sizeof rect;
     rect.alpha_q16 = 0;

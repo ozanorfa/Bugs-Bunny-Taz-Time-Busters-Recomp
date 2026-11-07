@@ -9,7 +9,13 @@ its own actor, seat 2 (driven with the p3 plugin's test command) turns the
 third actor to camera 2's forward direction, the game keeps running at
 close to its stock rate (game.toml [timing], NOTES.md "Third player's own
 view"), and the third actor's own sounds keep the master volume far from
-Bugs' and Taz's cameras (NOTES.md "Sound and HUD per player"). The two plugins that need Actor_Update share one override
+Bugs' and Taz's cameras (NOTES.md "Sound and HUD per player"). The third
+player's death follows the game's rule for Bugs and Taz: it is out (not
+updated, not drawn) without touching Taz or the lives, until Bugs and Taz
+are both down and the team respawns, a life lost; then it is back next to
+Taz with full health (NOTES.md "The third player's death"). A death is
+started by a hit put in RAM (+0x66 damage 6, +0x24 bit 0x40000000, one of
+Actor_Update's hit conditions). The two plugins that need Actor_Update share one override
 (bbt.shared/actor-update, activated implicitly). Screenshots go to
 build-tests/out/ownview3/."""
 from __future__ import annotations
@@ -35,6 +41,8 @@ MAX_TURN = 30
 LISTENER = 0x2C                          # camera record offset of the sound listener
 SOUND_SLOTS, SOUND_SLOT_BYTES, SOUND_SLOT_COUNT = 0x80093274, 0x1C, 24
 SOUND_MASTER, SOUND_RANGE = 0x8008DBD4, 0x1000
+HERO_DOWN, LIVES = 0x800100A2, 0x800100A0  # 0x10 / 0x20 Bugs / Taz died, 1 / 2 out; lives
+DEATH, CLIP_PASVISIBLE, FULL_HEALTH = 0x2000000, 0x20, 6
 
 
 def camera(c, view: int):
@@ -61,6 +69,24 @@ def sound_volumes(c, actor: int) -> set[tuple[int, int]]:
         vol, = struct.unpack_from("<H", raw, i * SOUND_SLOT_BYTES + 0xC)
         if flags & 0x8000 and who == actor:
             out.add((vol & 0xFF, vol >> 8))
+    return out
+
+
+def hit(c, actor: int, damage: int = 6) -> None:
+    """A hit as Actor_Update applies it: +0x66 damage, +0x24 bit 0x40000000."""
+    w = c.u32(actor + 0x64)
+    c.write_u32(actor + 0x64, (w & 0xFFFF) | (damage << 16))
+    c.write_u32(actor + 0x24, c.u32(actor + 0x24) | 0x40000000)
+
+
+def listed(c) -> list[int]:
+    """View 0's update / draw list (0x800970FC[0], 0-terminated)."""
+    lst, out = c.u32(0x800970FC), []
+    for i in range(64):
+        a = c.u32(lst + 4 * i)
+        if a == 0:
+            break
+        out.append(a)
     return out
 
 
@@ -173,6 +199,49 @@ class ThreeViews(unittest.TestCase):
         self.assertTrue(heard, "no sound of the third actor seen")
         self.assertEqual(heard, {(master, master)}, f"volumes {sorted(heard)}, master {master}")
         self.assertGreater(c.counters().get(V + "sound_player_3", 0), 0)
+
+    def test_5_the_third_player_dies_on_its_own(self):
+        self.need("three views")
+        c, p = self.c, self.p
+        clone, taz = self.clone(), p.actor(2)
+        lives = c.u8(LIVES)
+        self.assertEqual(c.u8(HERO_DOWN) & 0x33, 0, "someone is already down")
+        hit(c, clone)
+        self.assertTrue(c.wait_until(lambda: c.u16(clone + 0x6E) & CLIP_PASVISIBLE, 600, 5),
+                        "the dead third actor did not go out")
+        c.wait_frames(240)                                 # long enough for more death steps
+        self.assertTrue(c.u32(clone + 0x20) & DEATH)
+        self.assertNotIn(clone, listed(c), "an out third actor is still updated / drawn")
+        self.assertEqual(c.u8(HERO_DOWN) & 0x33, 0, "the third actor's death marked a hero down")
+        self.assertEqual(c.u8(LIVES), lives, "the third actor's death cost a life")
+        self.assertEqual(c.u8(0x800100A6), c.s16(taz + 0x3C), "Taz's kept health is not his")
+        self.assertIn(taz, listed(c), "Taz is no longer updated")
+        x0 = p.pos(taz)
+        c.hold(pad("up"), port=2); c.wait_frames(40); c.release(port=2); c.wait_frames(10)
+        self.assertGreater(moved(x0, p.pos(taz)), 32, "Taz does not move after the third actor's death")
+        self.reached.add("third out")
+
+    def test_6_the_team_respawn_brings_it_back(self):
+        self.need("third out")
+        c, p = self.c, self.p
+        clone, bugs, taz = self.clone(), p.actor(1), p.actor(2)
+        lives = c.u8(LIVES)
+        hit(c, bugs)
+        self.assertTrue(c.wait_until(lambda: c.u8(HERO_DOWN) & 0x01, 600, 5), "Bugs did not go out")
+        self.assertTrue(c.u16(clone + 0x6E) & CLIP_PASVISIBLE, "the third actor came back too early")
+        hit(c, taz)
+        self.assertTrue(c.wait_until(lambda: c.u8(LIVES) == lives - 1, 900, 5), "no team respawn")
+        self.assertTrue(c.wait_until(lambda: not c.u16(clone + 0x6E) & CLIP_PASVISIBLE, 60, 1),
+                        "the third actor did not come back")
+        c.wait_frames(60)
+        self.assertEqual(c.s16(clone + 0x3C), FULL_HEALTH)
+        self.assertFalse(c.u32(clone + 0x20) & DEATH)
+        self.assertIn(clone, listed(c))
+        self.assertLess(flat(p.pos(clone), p.pos(taz)), 600, "the third actor is not back next to Taz")
+        x0 = p.pos(clone)
+        self.seat2(pad("up")); c.wait_frames(40); self.seat2(None); c.wait_frames(10)
+        self.assertGreater(moved(x0, p.pos(clone)), 32, "seat 2 does not move the third actor again")
+        self.game.shot("6_back")
 
 
 if __name__ == "__main__":

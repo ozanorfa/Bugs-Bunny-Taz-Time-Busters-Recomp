@@ -42,4 +42,8 @@ void bbt_actor_update_hook(int slot, const BbtActorUpdateHook* hook);
  * plugin is off, not ready, or no clone is spawned. */
 uint32_t bbt_p3_actor(void);
 
+/* Nonzero while the third actor is out: dead and waiting for the team's
+ * respawn (not updated, not drawn). */
+int bbt_p3_out(void);
+
 #endif

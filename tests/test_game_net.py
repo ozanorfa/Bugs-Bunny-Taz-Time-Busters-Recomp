@@ -33,6 +33,9 @@ our mods"):
   peer draws its own seat's view full screen (local_view_0 / 1 / 2), no
   own-view draw hits the watchdog, the presented images have no split, the
   digests agree.
+- two peers with "Two views" after Bugs is down (a hit put in RAM): the
+  game makes Taz player 1, the guest keeps drawing Taz (now view 0) and the
+  host, whose Bugs is out, draws his teammate Taz's view.
 Replays of our hooks inside a level do not happen: the level music is an XA
 stream, during which the framework runs lockstep and refuses every rollback
 (NOTES.md "N3: rollback and three peers"). On localhost the
@@ -337,6 +340,59 @@ class NetplayWithMods(unittest.TestCase):
         print(f"\n    {compared} ticks compared up to {last}, Granwich at ~{loaded_at}", file=sys.stderr)
         self.assertEqual(bad, [], "the peers' machine digests differ")
         self.assertGreater(last, loaded_at + 100, "no digests after the level load")
+
+    def test_7_after_bugs_is_down_each_peer_shows_a_hero_in_play(self):
+        """Bugs' death makes Taz player 1 (views 0 / 1 follow players 1 / 2):
+        the guest still shows Taz (now view 0), the host, whose Bugs is out,
+        shows his teammate Taz. The hit is put in RAM on both peers (a debug
+        write lands at a different tick on each), so digests are not compared
+        after it."""
+        build = need_build()
+        with NetMatch(build, "net-own-view-down", [OWN, OWN], window=True, env=SMALL_GL) as m:
+            host, guest = m.peers
+            c, p = host.client, Player(_Run(host.client))
+            self.assertTrue(c.wait_until(lambda: p.level() == 2, 3000, 2), "no language screen")
+            c.wait_frames(200)
+            self.assertTrue(p.language_to_title(), "no title")
+            c.wait_frames(240); c.press(pad("start")); c.wait_frames(120)
+            c.press(pad("cross")); c.wait_frames(60)          # NEW GAME
+            c.press(pad("down")); c.wait_frames(30)
+            c.press(pad("cross")); c.wait_frames(90)          # TWO PLAYERS
+            c.press(pad("cross"))                             # START GAME
+            self.assertTrue(c.wait_until(lambda: p.level() == LEVEL_GRANNY and p.players_ready(),
+                                         3000, 2), "Granwich did not load")
+            for _ in range(10):                               # the opening dialogs
+                c.press(pad("cross")); c.wait_frames(150)
+            bugs, taz = p.actor(1), p.actor(2)
+
+            def own(peer) -> dict:
+                return {k[len(V):]: v for k, v in peer.client.counters().items() if k.startswith(V)}
+
+            before = [own(pe) for pe in m.peers]
+            for pe in m.peers:
+                w = pe.client.u32(bugs + 0x64)
+                pe.client.write_u32(bugs + 0x64, (w & 0xFFFF) | (6 << 16))
+                pe.client.write_u32(bugs + 0x24, pe.client.u32(bugs + 0x24) | 0x40000000)
+            self.assertTrue(c.wait_until(lambda: all(pe.client.u8(0x800100A2) & 1 for pe in m.peers),
+                                         600, 5), "Bugs did not go out")
+            c.wait_frames(180)
+            m.check_alive()
+            for pe in m.peers:
+                with self.subTest(peer=pe.slot):
+                    self.assertEqual(pe.client.u32(0x8008DD04), taz, "Taz is not player 1")
+                    self.assertEqual(pe.client.u32(0x80093C58), taz, "view 0 does not follow Taz")
+                    k = own(pe)
+                    d = {x: k.get(x, 0) - before[pe.slot].get(x, 0)
+                         for x in ("local_view_0", "local_view_1", "local_view_teammate", "local_refused")}
+                    self.assertGreater(d["local_view_0"], 60, f"Taz's view not drawn: {d}")
+                    self.assertLess(d["local_view_1"], 40, f"still drawing the out Bugs' view: {d}")
+                    self.assertEqual(d["local_refused"], 0, f"own-view draws refused: {d}")
+                    if pe is host:
+                        self.assertGreater(d["local_view_teammate"], 60, f"no teammate view: {d}")
+                    else:
+                        self.assertEqual(d["local_view_teammate"], 0, f"Taz's own peer spectates: {d}")
+                    pe.client.send({"cmd": "screenshot_hires",
+                                    "path": str((m.dir / f"shown{pe.slot}.png").resolve())}, timeout=60.0)
 
 
 def clone_pos(peer) -> tuple:

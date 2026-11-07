@@ -91,7 +91,10 @@ run against `build-release`, which holds your own mod selection
   keeps ≥ 0.44 frames per vblank with everyone running, the shared
   Actor_Update feature is activated implicitly, and the third actor's own
   sounds (sound slot table 0x80093274) keep the master volume when it is
-  farther than 0x1000 from Bugs' and Taz's cameras.
+  farther than 0x1000 from Bugs' and Taz's cameras. Its death (a hit put in
+  RAM) leaves Taz and the lives alone and takes it out (not listed); after
+  Bugs and Taz both go down and the team respawns (a life lost) it is back
+  next to Taz with full health and moves again.
 - `test_game_net.py` — netplay with our mods (`build-net`): two headless
   peers on 127.0.0.1 in a rollback match (`--netplay`, `PSX_NET_MODE=rollback`),
   each from a folder of its own under `build-tests/out/net-*/` (a link to
@@ -113,7 +116,10 @@ run against `build-release`, which holds your own mod selection
   drives it the same way everywhere, digests equal. Three peers on the
   third character + "Two views" in hidden windows: each peer draws its own
   seat's view (`local_view_0/1/2`), no watchdog, no split shown, digests
-  equal. About 3.5 min in all.
+  equal. Two peers on "Two views" after Bugs is down (a hit put in RAM on
+  both, so no digest check): Taz is player 1, the guest draws Taz (view 0)
+  and the host, whose Bugs is out, his teammate Taz (`local_view_teammate`).
+  About 4.5 min in all.
 - `test_game_lanroom.py` — a LAN room through the real launcher (`build-net`):
   two launchers driven by recomp-ui's script hook (`LNG_SCRIPT`, hidden
   windows), host Host Lobby -> Create Lobby, guest Join Direct

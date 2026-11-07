@@ -109,6 +109,22 @@
 #define A_RES_C      0x174u
 #define HERO_FLAG    0x04000000u
 #define INITOK       0x8000u
+#define A_ACTION     0x020u   /* ACTIONSTATE: 0x2000000 = DEATH */
+#define DEATH_FLAG   0x02000000u
+#define A_SPEED      0x070u   /* s32 + s16 at +0x74, zeroed by the death step */
+#define A_HEALTH     0x03Cu   /* s16 */
+#define A_CLIP       0x06Eu   /* u16 clip flags */
+#define CLIP_PASVISIBLE 0x20u /* "not visible": the actor pass does not list it (no update, no draw) */
+#define FULL_HEALTH  6        /* what the game's respawn gives both heroes (FUN_80022510) */
+#define ADDR_BUGS_HERO   0x8008DDD0u   /* the identity-2 hero (Bugs) */
+#define ADDR_TAZ_HERO    0x8008DDE4u   /* the identity-3 hero (Taz) */
+/* Globals Actor_Update keys to a hero's identity (+0x34; the clone keeps
+ * Taz's 3), NOTES.md "The third player's death". */
+#define ADDR_HERO_DOWN   0x800100A2u   /* 0x10 / 0x20 Bugs / Taz died, 1 / 2 out */
+#define ADDR_TAZ_HEALTH  0x800100A6u   /* identity-3 hero's health, kept between levels */
+#define ADDR_TAZ_HIT     0x8008DA0Du   /* Taz's hit flash (HUD) */
+#define ADDR_GAUGE       0x80093951u   /* gauge of a ForceToGauge (+0x0C 0x200) actor */
+#define ADDR_DEATH_DONE  0x80022510u   /* FUN_80022510(hero, ...): its death is over */
 #define POOL_KEEP_FREE 8      /* actor slots left to the game's own spawns */
 /* Size option ("size" of feature p3): percent of the enemy's own size,
  * written to the clone's scale +0xEC/+0xEE/+0xF0 (s16, 0x1000 = 1.0;
@@ -135,6 +151,9 @@
 #define ST_SPAWNS    0x14u
 #define ST_SPAWN_XZ  0x18u    /* where it was placed: s16 x | s16 z << 16 */
 #define ST_SLOT      0x20u    /* player 2's slot fields during the clone's update */
+#define ST_NO_INPUT  0x30u    /* 1 while the clone's update runs without input (dead) */
+#define ST_OUT       0x34u    /* 1 while the third player is out (kept across level loads) */
+#define ST_TEAM_DOWN 0x38u    /* 1 while Bugs and Taz are both down */
 #define STATE_MAGIC  0x33544242u
 
 
@@ -516,6 +535,87 @@ static void spawn(CPUState* cpu, uint32_t taz)
     (void)upload_textures(cpu->gpr[GPR_SP]);
 }
 
+/* The third player's death follows the game's rule for Bugs and Taz (user's
+ * choice, 2026-11-07): from the end of its death it is out (not listed by
+ * the actor pass: no update, no draw), also in the next levels, until the
+ * team respawns. The team respawns when Bugs and Taz are both down: the
+ * second death's step (FUN_80022510) or a level exit with both down
+ * (FUN_8002A384) takes a life and clears both down bits of 0x800100A2 at
+ * once. The third player then comes back next to Taz with full health. */
+static void take_out(uint32_t a)
+{
+    psx_mod_write_half(a + A_CLIP, (uint16_t)(psx_mod_read_half(a + A_CLIP) | CLIP_PASVISIBLE));
+}
+
+static void place_next_to_taz(uint32_t a)
+{
+    const uint32_t taz = psx_mod_read_word(ADDR_TAZ_HERO), bugs = psx_mod_read_word(ADDR_BUGS_HERO);
+    if (!in_main_ram(taz) || taz == a)
+        return;
+    const int tx = (int16_t)psx_mod_read_half(taz + A_POS), ty = (int16_t)psx_mod_read_half(taz + A_POS + 2);
+    const int tz = (int16_t)psx_mod_read_half(taz + A_POS + 4);
+    int dx = SPAWN_GAP, dz = 0;
+    if (in_main_ram(bugs)) {
+        const int vx = tx - (int16_t)psx_mod_read_half(bugs + A_POS);
+        const int vz = tz - (int16_t)psx_mod_read_half(bugs + A_POS + 4);
+        const int ax = vx < 0 ? -vx : vx, az = vz < 0 ? -vz : vz;
+        const int len = ax > az ? ax : az;
+        if (len > 0) {
+            dx = vx * SPAWN_GAP / len;
+            dz = vz * SPAWN_GAP / len;
+        }
+    }
+    const int nx = tx + dx, nz = tz + dz;
+    psx_mod_write_half(a + A_POS, (uint16_t)nx);
+    psx_mod_write_half(a + A_POS + 2, (uint16_t)ty);
+    psx_mod_write_half(a + A_POS + 4, (uint16_t)nz);
+    for (uint32_t m = 0; m < 2; ++m) {
+        const uint32_t t = a + (m ? A_MATRIX2_T : A_MATRIX_T);
+        psx_mod_write_word(t, (uint32_t)nx);
+        psx_mod_write_word(t + 4, (uint32_t)ty);
+        psx_mod_write_word(t + 8, (uint32_t)nz);
+    }
+}
+
+static void third_player_back(uint32_t a)
+{
+    psx_mod_write_half(a + A_HEALTH, FULL_HEALTH);
+    psx_mod_write_word(a + A_ACTION, psx_mod_read_word(a + A_ACTION) & ~DEATH_FLAG);
+    psx_mod_write_half(a + A_CLIP, (uint16_t)(psx_mod_read_half(a + A_CLIP) & ~CLIP_PASVISIBLE));
+    psx_mod_write_word(a + A_SPEED, 0);
+    psx_mod_write_half(a + A_SPEED + 4u, 0);
+    place_next_to_taz(a);
+}
+
+static void watch_team(uint32_t a)
+{
+    if (psx_mod_read_word(ADDR_LEVEL_ID) == 0) {
+        /* the title: a new game starts with nobody out (the game clears
+         * its own down bits on that path, FUN_800110C8) */
+        st_set(ST_OUT, 0);
+        st_set(ST_TEAM_DOWN, 0);
+        return;
+    }
+    const uint8_t down = psx_mod_read_byte(ADDR_HERO_DOWN);
+    if ((down & 0x11u) && (down & 0x22u)) {
+        st_set(ST_TEAM_DOWN, 1);
+    } else if (st_get(ST_TEAM_DOWN) && !(down & 0x33u)) {
+        st_set(ST_TEAM_DOWN, 0);
+        const int dying = a && (psx_mod_read_word(a + A_ACTION) & DEATH_FLAG);
+        if (st_get(ST_OUT) || dying) {
+            st_set(ST_OUT, 0);
+            if (a)
+                third_player_back(a);
+            count("back", 1);
+        }
+    }
+}
+
+int bbt_p3_out(void)
+{
+    return bbt_p3_actor() && st_get(ST_OUT) != 0;
+}
+
 /* Wrap of the actor pass FUN_80013030(list, ...). */
 static int actor_pass_wrap(CPUState* cpu)
 {
@@ -548,8 +648,12 @@ static int actor_pass_wrap(CPUState* cpu)
         if (source_pristine(taz)) {
             spawn(cpu, taz);
             a = st_get(ST_ACTOR);
+            if (a && st_get(ST_OUT))
+                take_out(a);                   /* still out from an earlier level */
         }
     }
+    if (!psx_mod_local_view_scope())
+        watch_team(a);
     uint32_t hidden = 0;
     if (a) {
         const uint32_t type = psx_mod_read_word(a + A_TYPE);
@@ -569,21 +673,29 @@ static int actor_pass_wrap(CPUState* cpu)
 
 /* Actor_Update(actor) through the shared hub (actor_update_hub.h): the clone
  * reads the third player's input. Player 2's slot is kept in the guest block
- * for the length of the call. */
+ * for the length of the call. The clone has Taz's identity, so its update
+ * writes Taz's identity-keyed globals (its death sets "Taz died", its health
+ * becomes Taz's kept health, a hit flashes Taz's HUD panel): they are put
+ * back after it (save: the four bytes). A dead clone gets no input. */
 static int input_pre(CPUState* cpu, uint32_t a, uint32_t* save)
 {
     (void)cpu;
-    (void)save;
     if (!g_block || g_prepared != 1 || a == 0 || a != st_get(ST_ACTOR))
         return 0;
+    *save = (uint32_t)psx_mod_read_byte(ADDR_HERO_DOWN) |
+            (uint32_t)psx_mod_read_byte(ADDR_TAZ_HEALTH) << 8 |
+            (uint32_t)psx_mod_read_byte(ADDR_TAZ_HIT) << 16 |
+            (uint32_t)psx_mod_read_byte(ADDR_GAUGE) << 24;
     const uint32_t rec = bbt_p3_record();
+    const int dead = (psx_mod_read_word(a + A_ACTION) & DEATH_FLAG) != 0;
     uint8_t p2[INPUT_FIELDS], p3[INPUT_FIELDS];
     read_bytes(ADDR_INPUT_SLOT1, p2, INPUT_FIELDS);
     write_bytes(g_block + BLK_STATE + ST_SLOT, p2, INPUT_FIELDS);
-    if (rec)
+    if (rec && !dead)
         read_bytes(rec, p3, INPUT_FIELDS);
     else
         memset(p3, 0, sizeof p3);
+    st_set(ST_NO_INPUT, dead ? 1u : 0u);
     write_bytes(ADDR_INPUT_SLOT1, p3, INPUT_FIELDS);
     return 1;
 }
@@ -592,16 +704,22 @@ static void input_post(CPUState* cpu, uint32_t a, uint32_t save)
 {
     (void)cpu;
     (void)a;
-    (void)save;
     const uint32_t rec = bbt_p3_record();
     uint8_t p2[INPUT_FIELDS], p3[INPUT_FIELDS];
     /* What the update consumed stays consumed for the third player. */
-    if (rec) {
+    if (rec && !st_get(ST_NO_INPUT)) {
         read_bytes(ADDR_INPUT_SLOT1, p3, INPUT_FIELDS);
         write_bytes(rec, p3, INPUT_FIELDS);
     }
+    st_set(ST_NO_INPUT, 0);
     read_bytes(g_block + BLK_STATE + ST_SLOT, p2, INPUT_FIELDS);
     write_bytes(ADDR_INPUT_SLOT1, p2, INPUT_FIELDS);
+    if (psx_mod_read_byte(ADDR_HERO_DOWN) != (uint8_t)save)
+        count("taz_down_kept", 1);
+    psx_mod_write_byte(ADDR_HERO_DOWN, (uint8_t)save);
+    psx_mod_write_byte(ADDR_TAZ_HEALTH, (uint8_t)(save >> 8));
+    psx_mod_write_byte(ADDR_TAZ_HIT, (uint8_t)(save >> 16));
+    psx_mod_write_byte(ADDR_GAUGE, (uint8_t)(save >> 24));
     count("updates", 1);
 }
 
@@ -613,6 +731,33 @@ uint32_t bbt_p3_actor(void)
         return 0;
     const uint32_t a = st_get(ST_ACTOR);
     return in_main_ram(a) && linked(a) ? a : 0;
+}
+
+/* FUN_80022510(hero, ...): the end of a hero's death (behaviour machine
+ * FUN_80020B80, while DEATH is set). With no hero out yet it marks this one
+ * out (0x800100A2 bit 0 for Bugs, bit 1 for anyone else); with one out
+ * already a life is lost and both heroes respawn. For the clone that marked
+ * Taz out (taken out of the update list while alive) and, called again every
+ * death loop, took a life each time (measured: lives 3 -> 1 in 8 s; BUGS
+ * #23). The clone's death is its own: none of that runs for it; the third
+ * player is out until the team respawns (watch_team). */
+/* addiu sp,sp,-0x20 / sw s0,0x18(sp) / move s0,a1 / lui a1,0x8001 */
+static const uint32_t kDeathDoneGuard[4] = {0x27BDFFE0u, 0xAFB00018u, 0x00A08021u, 0x3C058001u};
+
+static int death_done_wrap(CPUState* cpu)
+{
+    const uint32_t a = cpu->gpr[4];
+    if (a == 0 || a != bbt_p3_actor())
+        return 0;
+    psx_mod_write_word(a + A_SPEED, 0);            /* as the game's step does first */
+    psx_mod_write_half(a + A_SPEED + 4u, 0);
+    if (!st_get(ST_OUT)) {
+        st_set(ST_OUT, 1);
+        take_out(a);
+        count("out", 1);
+    }
+    count("death_steps", 1);
+    return 1;
 }
 
 static void session_reset(void)
@@ -663,6 +808,9 @@ PSX_MOD_CONSTRUCTOR(register_bbt_third_actor)
     (void)psx_mod_register_function_override(
         PLUGIN_ACTOR ":actor-pass", ADDR_ACTOR_PASS,
         actor_pass_wrap, kActorPassGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(
+        PLUGIN_ACTOR ":death-done", ADDR_DEATH_DONE,
+        death_done_wrap, kDeathDoneGuard, 4, FO_CREDIT_SELF);
     (void)psx_mod_register_session_reset_plugin(PLUGIN_ACTOR, session_reset);
     (void)psx_mod_register_command("bbt.p3actor", p3actor_command);
 }
