@@ -142,6 +142,27 @@
  * a pass never takes) after filling the frame's draw environment for the
  * target buffer (FUN_800593B8). VSync, DrawSync and libcd's waits return at
  * once inside the draw, as a safeguard.
+ *
+ * Sound with three views. The game has one sound mix for every view (the
+ * SPU is shared machine state, so in netplay every peer hears the same mix).
+ * FUN_80063D24(actor, sound, view) gives a sound its stereo volume: players
+ * 1 and 2 (and actor 0) at the master volume DAT_8008DBD4, any other actor by
+ * its distance to camera 0's listener (record + 0x2C) or, with more than one
+ * view, camera 1's, whichever is nearer (silent beyond 0x1000, or the
+ * sound's own range), panned by the camera's direction. It never looks at
+ * camera 2, so the third player's own sounds went silent once it was ~0x1000
+ * from Bugs' and Taz's cameras (measured: volume 0 / 0 at 4200 units, with
+ * camera 2 1000 units away). Most sounds start inside the update walk, which
+ * sees a count of 1 (update_walk_wrap), so they were heard from camera 0
+ * only, even with two views. sound_volume_wrap gives the function the real
+ * count, and with three views hears the third player as players 1 and 2
+ * are, and any other actor from camera 2 too: the original runs once as if
+ * camera 2 were the only camera (its
+ * listener and direction in record 0, a count of 1, view 0), then once as
+ * it is; camera 2's result wins only when its louder channel is louder (the
+ * pan leaves the nearer side at the distance volume, so the louder channel
+ * is the distance volume). The stock call runs last, so the state the
+ * function leaves (GTE registers) is the stock one.
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -748,6 +769,77 @@ static int env_for_view_wrap(CPUState* cpu)
     return 1;
 }
 
+#define ADDR_SOUND_VOLUME   0x80063D24u   /* FUN_80063D24(actor, sound, view) -> L | R << 8 */
+#define ADDR_SOUND_MASTER   0x8008DBD4u   /* byte: master volume of the sound pass */
+/* lbu v0,0x250(gp) / addiu sp,sp,-0x88 / sw s4,0x78(sp) / move s4,a1 */
+static const uint32_t kSoundVolumeGuard[4] = {
+    0x93820250u, 0x27BDFF78u, 0xAFB40078u, 0x00A0A021u,
+};
+/* The camera words the volume reads: vp x, y, z and vr x, y, z (+0x04..+0x18)
+ * for the direction, the listener x, y, z (+0x2C..+0x34) for distance and pan. */
+static const uint8_t kSoundCameraWords[9] = {0x04, 0x08, 0x0C, 0x10, 0x14, 0x18, 0x2C, 0x30, 0x34};
+
+static uint32_t louder_channel(uint32_t lr)
+{
+    const uint32_t l = lr & 0xFFu, r = (lr >> 8) & 0xFFu;
+    return l > r ? l : r;
+}
+
+static int sound_volume_wrap(CPUState* cpu)
+{
+    if (psx_mod_local_view_scope())
+        return 0;
+    /* the update walk shows the game a count of 1 (update_walk_wrap), and
+     * most sounds start there: they are heard from every view all the same */
+    const uint8_t count = psx_mod_read_byte(ADDR_VIEW_COUNT);
+    const uint8_t views = g_walk_views > 1 ? g_walk_views : count;
+    if (views <= 1 || views > MAX_VIEWS)
+        return 0;
+    const uint32_t actor = cpu->gpr[4], sound = cpu->gpr[5], view = cpu->gpr[6];
+    if (views == 3u && actor != 0 && actor == psx_mod_read_word(ADDR_FOLLOWED + 8u)) {
+        /* the third player, at the master volume like players 1 and 2 */
+        const uint32_t master = psx_mod_read_byte(ADDR_SOUND_MASTER);
+        cpu->gpr[2] = master | (master << 8);
+        psx_mod_counter_add(PLUGIN ".sound_player_3", 1u);
+        return 1;
+    }
+    /* a present from the VSync callback inside a call sees the real count
+     * through g_walk_views, as during the update walk */
+    const uint8_t walk_views = g_walk_views;
+    g_walk_views = views;
+    uint32_t from_camera_2 = 0;
+    if (views == 3u) {
+        /* as if camera 2 were the only camera */
+        const uint32_t cam0 = ADDR_CAM_RECORDS, cam2 = ADDR_CAM_RECORDS + 2u * CAM_RECORD_BYTES;
+        uint32_t saved[sizeof kSoundCameraWords];
+        for (unsigned i = 0; i < sizeof kSoundCameraWords; ++i) {
+            saved[i] = psx_mod_read_word(cam0 + kSoundCameraWords[i]);
+            psx_mod_write_word(cam0 + kSoundCameraWords[i], psx_mod_read_word(cam2 + kSoundCameraWords[i]));
+        }
+        psx_mod_write_byte(ADDR_VIEW_COUNT, 1);
+        cpu->gpr[6] = 0;
+        func_override_call_original(cpu);
+        from_camera_2 = cpu->gpr[2] & 0xFFFFu;
+        for (unsigned i = 0; i < sizeof kSoundCameraWords; ++i)
+            psx_mod_write_word(cam0 + kSoundCameraWords[i], saved[i]);
+        cpu->gpr[4] = actor;
+        cpu->gpr[5] = sound;
+        cpu->gpr[6] = view;
+    }
+    /* as the game has it with more than one view: cameras 0 and 1 */
+    psx_mod_write_byte(ADDR_VIEW_COUNT, views);
+    func_override_call_original(cpu);
+    psx_mod_write_byte(ADDR_VIEW_COUNT, count);
+    g_walk_views = walk_views;
+    if (count <= 1)
+        psx_mod_counter_add(PLUGIN ".sound_in_walk", 1u);
+    if (louder_channel(from_camera_2) > louder_channel(cpu->gpr[2] & 0xFFFFu)) {
+        cpu->gpr[2] = from_camera_2;
+        psx_mod_counter_add(PLUGIN ".sound_camera_2", 1u);
+    }
+    return 1;
+}
+
 static int update_walk_wrap(CPUState* cpu)
 {
     if (psx_mod_local_view_scope())
@@ -902,6 +994,9 @@ PSX_MOD_CONSTRUCTOR(register_bbt_own_view)
                                              drawsync_in_view, kDrawSyncGuard, 4, FO_CREDIT_SELF);
     (void)psx_mod_register_function_override(PLUGIN ":env-3-views", ADDR_ENV_FOR_VIEW,
                                              env_for_view_wrap, kEnvForViewGuard, 4,
+                                             FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(PLUGIN ":sound-3-views", ADDR_SOUND_VOLUME,
+                                             sound_volume_wrap, kSoundVolumeGuard, 4,
                                              FO_CREDIT_SELF);
     (void)psx_mod_register_function_override(PLUGIN ":present", ADDR_PRESENT, present_wrap,
                                              kPresentGuard, 4, FO_CREDIT_SELF);

@@ -89,7 +89,9 @@ run against `build-release`, which holds your own mod selection
   the views follow Bugs, Taz and the third actor with single-player
   cameras, seat 2 turns the third actor to camera 2's forward, the game
   keeps ≥ 0.44 frames per vblank with everyone running, the shared
-  Actor_Update feature is activated implicitly.
+  Actor_Update feature is activated implicitly, and the third actor's own
+  sounds (sound slot table 0x80093274) keep the master volume when it is
+  farther than 0x1000 from Bugs' and Taz's cameras.
 - `test_game_net.py` — netplay with our mods (`build-net`): two headless
   peers on 127.0.0.1 in a rollback match (`--netplay`, `PSX_NET_MODE=rollback`),
   each from a folder of its own under `build-tests/out/net-*/` (a link to

@@ -6,9 +6,10 @@ With the third actor in a 2-player level the plugin raises the view count to
 3: view 2 follows the third actor (0x80093C58[2]), every camera is a
 single-player camera (record flags +0xE0: 0x80 set, 0x100 clear) looking at
 its own actor, seat 2 (driven with the p3 plugin's test command) turns the
-third actor to camera 2's forward direction, and the game keeps running at
+third actor to camera 2's forward direction, the game keeps running at
 close to its stock rate (game.toml [timing], NOTES.md "Third player's own
-view"). The two plugins that need Actor_Update share one override
+view"), and the third actor's own sounds keep the master volume far from
+Bugs' and Taz's cameras (NOTES.md "Sound and HUD per player"). The two plugins that need Actor_Update share one override
 (bbt.shared/actor-update, activated implicitly). Screenshots go to
 build-tests/out/ownview3/."""
 from __future__ import annotations
@@ -31,12 +32,36 @@ CAM_RECORD, CAM_RECORD_BYTES = 0x800964C4, 0x2C0
 CAM_FOLLOW_ONE, CAM_FRAME_BOTH = 0x80, 0x100
 VBLANKS, VIEW_PASSES = 0x8008DE20, 0x8008DE88
 MAX_TURN = 30
+LISTENER = 0x2C                          # camera record offset of the sound listener
+SOUND_SLOTS, SOUND_SLOT_BYTES, SOUND_SLOT_COUNT = 0x80093274, 0x1C, 24
+SOUND_MASTER, SOUND_RANGE = 0x8008DBD4, 0x1000
 
 
 def camera(c, view: int):
     r = CAM_RECORD + view * CAM_RECORD_BYTES
     return (struct.unpack("<3i", c.read(r + 4, 12)), struct.unpack("<3i", c.read(r + 0x10, 12)),
             c.u32(r + 0xE0))
+
+
+def listener(c, view: int):
+    return struct.unpack("<3i", c.read(CAM_RECORD + view * CAM_RECORD_BYTES + LISTENER, 12))
+
+
+def dist(a, b) -> int:
+    return round(math.dist(a, b))
+
+
+def sound_volumes(c, actor: int) -> set[tuple[int, int]]:
+    """(left, right) of the playing sound slots (+0 flags, +4 actor, +0xC volume) of an actor."""
+    raw = c.read(SOUND_SLOTS, SOUND_SLOT_COUNT * SOUND_SLOT_BYTES)
+    out = set()
+    for i in range(SOUND_SLOT_COUNT):
+        flags, = struct.unpack_from("<H", raw, i * SOUND_SLOT_BYTES)
+        who, = struct.unpack_from("<I", raw, i * SOUND_SLOT_BYTES + 4)
+        vol, = struct.unpack_from("<H", raw, i * SOUND_SLOT_BYTES + 0xC)
+        if flags & 0x8000 and who == actor:
+            out.add((vol & 0xFF, vol >> 8))
+    return out
 
 
 def flat(a, b) -> int:
@@ -123,6 +148,31 @@ class ThreeViews(unittest.TestCase):
         self.assertGreaterEqual(rate, 0.44, f"{rate:.3f} frames per vblank (stock: 0.5)")
         self.assertNotIn("FATAL", self.game.log_tail(200))
         self.game.shot("3_running")
+
+    def test_4_the_third_player_is_heard_far_from_the_others(self):
+        self.need("three views")
+        c, p = self.c, self.p
+        clone = self.clone()
+
+        def far() -> int:
+            return min(dist(p.pos(clone), listener(c, v)) for v in (0, 1))
+
+        for direction in ("down", "left", "up", "right", "down"):
+            if far() > SOUND_RANGE:
+                break
+            self.seat2(pad(direction)); c.wait_frames(240); self.seat2(None); c.wait_frames(10)
+        self.assertGreater(far(), SOUND_RANGE, "the third actor did not get away from cameras 0 and 1")
+        self.assertLess(dist(p.pos(clone), listener(c, 2)), SOUND_RANGE, "camera 2 is not near its actor")
+        heard = set()
+        for _ in range(8):                                 # jumps
+            self.seat2(pad("cross")); c.wait_frames(3)
+            heard |= sound_volumes(c, clone)
+            self.seat2(None); c.wait_frames(12)
+            heard |= sound_volumes(c, clone)
+        master = c.u8(SOUND_MASTER)
+        self.assertTrue(heard, "no sound of the third actor seen")
+        self.assertEqual(heard, {(master, master)}, f"volumes {sorted(heard)}, master {master}")
+        self.assertGreater(c.counters().get(V + "sound_player_3", 0), 0)
 
 
 if __name__ == "__main__":
