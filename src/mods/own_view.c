@@ -917,6 +917,37 @@ static int sound_volume_wrap(CPUState* cpu)
     return 1;
 }
 
+/* A hero that falls out of the world (its y wraps past 32767 while falling
+ * fast) is put back at the checkpoint by Actor_Update (0x8001DE5C..), which
+ * then calls FUN_800537B4(record) = record +0xBC = 0 on camera record 0
+ * only (BUGS #38). With views of their own, that reset view 0 (player 1's
+ * camera) whoever fell, and left the faller's own camera alone. The reset
+ * now goes to the record of the view that follows the hero that fell
+ * (s4 in Actor_Update). Guest state only, the same on every peer. */
+#define ADDR_CAMERA_RESET 0x800537B4u   /* FUN_800537B4(record) */
+#define RA_FALL_RESET     0x8001DEE4u   /* its return address in Actor_Update */
+#define CAM_RESET_FIELD   0xBCu
+/* jr ra / sw zero,0xBC(a0) */
+static const uint32_t kCameraResetGuard[2] = {0x03E00008u, 0xAC8000BCu};
+
+static int camera_reset_wrap(CPUState* cpu)
+{
+    if (cpu->gpr[31] != RA_FALL_RESET || cpu->gpr[4] != ADDR_CAM_RECORDS)
+        return 0;
+    const uint8_t views = bbt_view_count();
+    if (views <= 1 || views > MAX_VIEWS)
+        return 0;
+    const uint32_t hero = cpu->gpr[20];
+    for (uint32_t v = 1; v < views; ++v) {
+        if (psx_mod_read_word(ADDR_FOLLOWED + 4u * v) == hero) {
+            psx_mod_write_word(ADDR_CAM_RECORDS + v * CAM_RECORD_BYTES + CAM_RESET_FIELD, 0);
+            psx_mod_counter_add(PLUGIN ".fall_camera_reset", 1u);
+            return 1;            /* view 0's camera is not the faller's */
+        }
+    }
+    return 0;
+}
+
 uint8_t bbt_view_count(void)
 {
     return g_walk_views > 1 ? g_walk_views : psx_mod_read_byte(ADDR_VIEW_COUNT);
@@ -1076,6 +1107,9 @@ PSX_MOD_CONSTRUCTOR(register_bbt_own_view)
                                              drawsync_in_view, kDrawSyncGuard, 4, FO_CREDIT_SELF);
     (void)psx_mod_register_function_override(PLUGIN ":env-3-views", ADDR_ENV_FOR_VIEW,
                                              env_for_view_wrap, kEnvForViewGuard, 4,
+                                             FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(PLUGIN ":fall-camera", ADDR_CAMERA_RESET,
+                                             camera_reset_wrap, kCameraResetGuard, 2,
                                              FO_CREDIT_SELF);
     (void)psx_mod_register_function_override(PLUGIN ":sound-3-views", ADDR_SOUND_VOLUME,
                                              sound_volume_wrap, kSoundVolumeGuard, 4,

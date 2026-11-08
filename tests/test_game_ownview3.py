@@ -349,6 +349,37 @@ class ThreeViews(unittest.TestCase):
 
 
 
+    def test_7_a_fall_out_of_the_world_resets_the_fallers_camera(self):
+        """BUGS #38: a hero whose y wraps past 32767 while falling fast is put
+        back at the checkpoint (0x800971E8) and FUN_800537B4 resets a camera
+        record's +0xBC. The game resets camera 0 (player 1's); with views of
+        their own it must be the view that follows the faller (Taz: view 1)."""
+        self.need("three views")
+        c, p = self.c, self.p
+        taz = p.actor(2)
+        self.assertEqual(c.u32(FOLLOWED + 4), taz)
+        rec = lambda v: CAM_RECORD + v * CAM_RECORD_BYTES + 0xBC
+        # +0xBC is 0 in play: mark both, so the one reset shows
+        c.write_u32(rec(0), 0x5A5A)
+        c.write_u32(rec(1), 0x5A5A)
+        before = (c.u32(rec(0)), c.u32(rec(1)))
+        k0 = c.counters().get(V + "fall_camera_reset", 0)
+        cp = struct.unpack("<3i", c.read(0x800971E8, 12))
+        w = c.u32(taz + 0xFC)
+        c.write_u32(taz + 0xFC, (w & 0xFFFF) | (30000 << 16))      # y = 30000, falling
+        w = c.u32(taz + 0x70)
+        c.write_u32(taz + 0x70, (w & 0xFFFF) | (0x0D00 << 16))     # +0x72 vertical speed
+        self.assertTrue(c.wait_until(lambda: c.counters().get(V + "fall_camera_reset", 0) > k0, 120, 1),
+                        f"no reset seen (records +0xBC before {before})")
+        after = (c.u32(rec(0)), c.u32(rec(1)))
+        print(f"\n    camera +0xBC before {before} after {after}; checkpoint {cp}, Taz {p.pos(taz)}",
+              file=sys.stderr)
+        self.assertEqual(after[1], 0, "Taz's camera was not reset")
+        self.assertEqual(after[0], before[0], "player 1's camera was reset by Taz's fall")
+        self.assertLess(abs(p.pos(taz)[0] - (cp[0] & 0xFFFF if cp[0] < 0x8000 else cp[0])), 4000)
+        c.wait_frames(60)
+
+
 class EnemiesSeeTheThirdPlayer(unittest.TestCase):
     """A run of its own: TRCA01 straight after Granwich, nobody out."""
 
