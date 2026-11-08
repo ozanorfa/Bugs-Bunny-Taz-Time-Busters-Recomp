@@ -46,6 +46,7 @@ Logs go to build-tests/out/net-*/peer<slot>/game.log."""
 from __future__ import annotations
 
 import random
+import statistics
 import struct
 import sys
 import time
@@ -57,7 +58,7 @@ from bbt import config  # noqa: E402
 from bbt.client import pad  # noqa: E402
 from bbt.game import LEVEL_GRANNY, TYPE_TAZ, Player, three_player_toml  # noqa: E402
 from bbt.net import CONTENT_DIFFERS, NetMatch  # noqa: E402
-from bbt.png import dark_rows, row_means  # noqa: E402
+from bbt.png import dark_rows, row_jumps, row_means  # noqa: E402
 
 T = "bbt.third-character.trca01."
 Q = "bbt.quick-start."
@@ -331,8 +332,13 @@ class NetplayWithMods(unittest.TestCase):
                     self.assertEqual(pe.client.send({"cmd": "render_pass_stats"}).get("watchdog"), 0,
                                      "an own-view draw ran into the watchdog")
                     self.assertEqual(pe.status()["desync"], 0)
-                    self.assertGreaterEqual(len(dark_rows(row_means(shared), 0.2, 0.8)), 2,
-                                            "the shared frame has no split-screen dividers")
+                    # three 72-line bands from row 16 (own_view.c env_for_view_wrap):
+                    # the pictures change abruptly at rows 88 and 160 (measured
+                    # 42-54 against a median row change of ~4)
+                    jumps = row_jumps(shared)
+                    floor = 5 * statistics.median(jumps)
+                    self.assertTrue(all(jumps[round(b * len(jumps) / 240)] > floor for b in (88, 160)),
+                                    "the shared frame is not three bands")
                     self.assertEqual(dark_rows(row_means(shown), 0.2, 0.8), [],
                                      "the presented image is still split")
         compared, bad = m.compare_digests()

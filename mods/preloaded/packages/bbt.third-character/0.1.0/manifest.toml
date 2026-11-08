@@ -73,6 +73,10 @@ id = "bbt.third-character.p3"
 feature = "p3"
 id = "bbt.third-character.p3-actor"
 
+[[plugin]]
+feature = "p3"
+id = "bbt.third-character.p3-hud"
+
 [[option]]
 feature = "p3"
 id = "size"

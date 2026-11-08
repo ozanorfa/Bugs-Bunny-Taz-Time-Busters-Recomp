@@ -826,11 +826,19 @@ static int env_for_view_wrap(CPUState* cpu)
     const uint32_t dst = cpu->gpr[4], buffer = cpu->gpr[5] & 1u, view = cpu->gpr[6];
     if (cpu->gpr[7] != 3u || view >= 3u || !in_main_ram(dst))
         return 0;
-    const uint32_t top = 16u + 256u * buffer + 72u * view, bottom = top + 71u, centre = top + 36u;
+    /* The drawing offset follows the game's own 2-view table (band top +
+     * 106 for 108-line bands): with more than one view the actor pass loads
+     * the GTE offset OFY = -64 (FUN_8005EEDC), so the 3D picture is centred
+     * at offset - 64, while the HUD's sprites (full-screen layout, panels at
+     * y -104) are drawn at the offset itself. Top + 104 puts the 3D centre at
+     * band top + 40 (the band's centre + 4) and the HUD's top row at the
+     * band's top. (The band centre as the offset put the 3D centre 28 lines
+     * above the band and the HUD out of it.) */
+    const uint32_t top = 16u + 256u * buffer + 72u * view, bottom = top + 71u, origin = top + 104u;
     const uint32_t words[6] = {
         0xE3000000u | (top << 10) | 512u,
         0xE4000000u | (bottom << 10) | 1023u,
-        0xE5000000u | ((centre & 0x7FFu) << 11) | 768u,
+        0xE5000000u | ((origin & 0x7FFu) << 11) | 768u,
         0xE100060Au, 0xE2000000u, 0xE6000000u,
     };
     for (uint32_t k = 0; k < 6; ++k)
@@ -907,6 +915,11 @@ static int sound_volume_wrap(CPUState* cpu)
         psx_mod_counter_add(PLUGIN ".sound_camera_2", 1u);
     }
     return 1;
+}
+
+uint8_t bbt_view_count(void)
+{
+    return g_walk_views > 1 ? g_walk_views : psx_mod_read_byte(ADDR_VIEW_COUNT);
 }
 
 static int update_walk_wrap(CPUState* cpu)

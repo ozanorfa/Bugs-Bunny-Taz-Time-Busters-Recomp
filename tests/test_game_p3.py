@@ -14,7 +14,9 @@ and 2 stay Bugs and Taz with their own model and animations; its textures
 are in the free VRAM strip and it is drawn with them; seat 2 drives it and
 only it; its moves land and keep it drawn (the spin attaches a tornado); a
 level jump removes it and spawns a new one; a savestate brings it back;
-random play on all three seats keeps the game running.
+random play on all three seats keeps the game running. Phase 5: a hit on
+the third actor brings in its own HUD panel under Bugs' (one full-screen
+view).
 Screenshots go to build-tests/out/p3/."""
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
 from bbt.client import fnv1a32_pixels, pad, prim_cluts  # noqa: E402
 from bbt.game import LEVEL_GRANNY, LEVEL_VICA01, TYPE_BUGS, TYPE_TAZ, in_ram, three_player_toml  # noqa: E402
+from test_game_ownview3 import P3_SCREEN_FACE, check_p3_panel  # noqa: E402
 from test_game_stock import moved, start_run  # noqa: E402
 
 moved_by = moved
@@ -41,7 +44,7 @@ MOD_MEMORY = 0x9F000000
 RUN = 0x0033                 # Taz's run animation id (NOTES.md "Phase 3 findings")
 TAZ_IDLE = range(0x001F, 0x0028)   # Taz's idle chain (NOTES.md "M4")
 STANCE_FRAMES = 21           # the enemy's stance 0x001C (NOTES.md "M2")
-ROLE_IDS = {0x0001, 0x0033, 0x0034, 0x0036, 0x0037, 0x0039, 0x0072, 0x004F, 0x0097, 0x0073}
+ROLE_IDS = {0x0001, 0x0033, 0x0034, 0x0036, 0x0037, 0x0039, 0x0072, 0x004F, 0x0097, 0x0073, 0x00AA, 0x00AE}
 SCALE_75 = 0x0C00            # default "size" option, 75 %
 
 # (seat-2 pad word, active low) -> (held bits in the game's order, stick x, stick y)
@@ -222,10 +225,11 @@ class ThirdPlayer(unittest.TestCase):
         cs = self.counters()
         self.assertEqual({k: cs.get(k, 0) for k in ACTOR_ERRORS}, {k: 0 for k in ACTOR_ERRORS})
         self.assertEqual((cs.get("spawned"), cs.get("tex_uploaded"), cs.get("models")), (1, 1, 1))
-        # Taz's 67 animations (NOTES.md "Phase 3 findings"): 10 by role and his
-        # 9 idle ones on the enemy's stance (at its own timing); 48 hold a pose.
+        # Taz's 67 animations (NOTES.md "Phase 3 findings"): 12 by role (hurt
+        # and death since Phase 5) and his 9 idle ones on the enemy's stance (at
+        # its own timing); 46 hold a pose.
         self.assertEqual((cs.get("anims_mapped"), cs.get("anims_default"), cs.get("anims_native")),
-                         (19, 48, 9))
+                         (21, 46, 9))
         self.assertEqual(cs.get("hold_ready"), 1)
         show = self.actor_show()
         self.assertEqual((show["prepared"], show["tex"], show["groups"]), (1, 1, 13))
@@ -314,6 +318,12 @@ class ThirdPlayer(unittest.TestCase):
         c.wait_frames(30)
         self.assertTrue(moved, "no reaction from idle")
         self.assertLessEqual(lag, 12, f"{lag} frames from the press to moving")
+
+    def test_08c_hud_panel_under_bugs(self):
+        """Phase 5: one full-screen view, the third player's panel under
+        Bugs' (test_game_ownview3.check_p3_panel)."""
+        self.need("actor")
+        check_p3_panel(self, self.c, self.clone(), P3_SCREEN_FACE, lambda: self.game.shot("08c_hud_panel"))
 
     def test_09_textures_in_the_strip_and_drawn(self):
         self.need("actor")

@@ -48,6 +48,13 @@ static const DonorAnimMap kTazToTrca01[] = {
     {0x004Fu, DONOR_SUB_SPIN},
     {0x0097u, DONOR_SUB_SPIN},
     {0x0073u, 0x0151u},
+    /* Phase 5 (BUGS #16): hurt and death, traced per frame after a hit put
+     * in RAM (Taz: hurt 0x00AA, 8 frames; death 0x00AE, 29 frames; NOTES.md
+     * "The third player's moves"). Hurt -> thrown back, down and up again
+     * (12 frames); death -> pitched forward onto the ground, crouched there
+     * (42 frames). Both at least as long as Taz's. */
+    {0x00AAu, 0x01AEu},
+    {0x00AEu, 0x01B0u},
 };
 #define TAZ_MAP_COUNT ((int)(sizeof(kTazToTrca01) / sizeof(kTazToTrca01[0])))
 

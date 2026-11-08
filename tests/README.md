@@ -66,6 +66,10 @@ run against `build-release`, which holds your own mod selection
   it plays whole idle loops (no trembling) and still answers at once; seat 2 drives only it; ✕ □ ○ △ and the air spin land it on the floor
   drawn (the spin with a tornado); level jumps replace it; a savestate
   brings it back; random play on all three seats keeps the game running.
+  Phase 5: a real hit (2 damage) brings in the third player's own HUD
+  panel (sprites 15 / 16) under Bugs' panel, its bar blinks while the hit's
+  invincibility runs and ends at 4/6 of 80 pixels, Bugs' panel does not
+  move, the panel slides out and the invincibility ends.
 - `test_game_quickstart.py` — Quick start (`bbt.quick-start`, defaults):
   no logo levels and the language screen at once; START GAME reaches
   Granwich without the intro ever running; afterwards both pads move their
@@ -91,7 +95,10 @@ run against `build-release`, which holds your own mod selection
   keeps ≥ 0.44 frames per vblank with everyone running, the shared
   Actor_Update feature is activated implicitly, and the third actor's own
   sounds (sound slot table 0x80093274) keep the master volume when it is
-  farther than 0x1000 from Bugs' and Taz's cameras. Its death (a hit put in
+  farther than 0x1000 from Bugs' and Taz's cameras. A hit brings in its HUD
+  panel at the top centre of each 72-line band (the same check as in
+  `test_game_p3.py`, `check_p3_panel`; screenshot `4b_hud_panel.png`); its
+  invincibility then ends, so the next test can kill it. Its death (a hit put in
   RAM) leaves Taz and the lives alone and takes it out (not listed); after
   Bugs and Taz both go down and the team respawns (a life lost) it is back
   next to Taz with full health and moves again. A second run

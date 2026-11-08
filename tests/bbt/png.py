@@ -16,8 +16,8 @@ def _paeth(a: int, b: int, c: int) -> int:
     return b if pb <= pc else c
 
 
-def row_means(path: Path) -> list[float]:
-    """Mean of R, G and B per row (0..255)."""
+def _rows(path: Path):
+    """Yields (width, bytes per pixel, row) for each decoded row."""
     data = Path(path).read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError(f"{path}: not a PNG")
@@ -36,7 +36,6 @@ def row_means(path: Path) -> list[float]:
     raw = zlib.decompress(idat)
     stride = width * bpp
     prev = bytearray(stride)
-    out = []
     for y in range(height):
         f = raw[y * (stride + 1)]
         line = bytearray(raw[y * (stride + 1) + 1: (y + 1) * (stride + 1)])
@@ -55,9 +54,30 @@ def row_means(path: Path) -> list[float]:
                 left = line[i - bpp] if i >= bpp else 0
                 up_left = prev[i - bpp] if i >= bpp else 0
                 line[i] = (line[i] + _paeth(left, prev[i], up_left)) & 0xFF
+        yield width, bpp, bytes(line)
+        prev = line
+
+
+def row_means(path: Path) -> list[float]:
+    """Mean of R, G and B per row (0..255)."""
+    out = []
+    for width, bpp, line in _rows(path):
         total = sum(line) - (sum(line[3::4]) if bpp == 4 else 0)
         out.append(total / (width * 3))
-        prev = line
+    return out
+
+
+def row_jumps(path: Path) -> list[float]:
+    """Mean absolute R, G, B change from the row above, per row (0 for the
+    first): high where one picture ends and another starts."""
+    out, last = [], None
+    for width, bpp, line in _rows(path):
+        if last is None:
+            out.append(0.0)
+        else:
+            d = sum(abs(line[i] - last[i]) for i in range(len(line)) if bpp == 3 or i % 4 != 3)
+            out.append(d / (width * 3))
+        last = line
     return out
 
 

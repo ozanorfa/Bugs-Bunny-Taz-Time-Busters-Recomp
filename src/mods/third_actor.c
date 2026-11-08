@@ -160,6 +160,7 @@
 #define ST_OUT       0x34u    /* 1 while the third player is out (kept across level loads) */
 #define ST_TEAM_DOWN 0x38u    /* 1 while Bugs and Taz are both down */
 #define ST_REF_OFF   0x3Cu    /* tests only (debug command "ref-third off"): scripts never pick the clone */
+#define ST_HIT       0x40u    /* the clone's own hit counter (Taz's is 0x8008DA0D) */
 #define STATE_MAGIC  0x33544242u
 
 
@@ -669,6 +670,11 @@ static int player_ref_wrap(CPUState* cpu)
     return 1;
 }
 
+uint8_t bbt_p3_hit_flash(void)
+{
+    return bbt_p3_actor() ? (uint8_t)st_get(ST_HIT) : 0u;
+}
+
 int bbt_p3_out(void)
 {
     return bbt_p3_actor() && st_get(ST_OUT) != 0;
@@ -683,7 +689,7 @@ static int actor_pass_wrap(CPUState* cpu)
         return 1;
     }
     if (st_get(ST_MAGIC) != STATE_MAGIC) {
-        for (uint32_t f = 0; f < 0x40u; f += 4)
+        for (uint32_t f = 0; f <= ST_HIT; f += 4)
             st_set(f, 0);
         st_set(ST_MAGIC, STATE_MAGIC);
     }
@@ -744,6 +750,17 @@ static int input_pre(CPUState* cpu, uint32_t a, uint32_t* save)
             (uint32_t)psx_mod_read_byte(ADDR_TAZ_HEALTH) << 8 |
             (uint32_t)psx_mod_read_byte(ADDR_TAZ_HIT) << 16 |
             (uint32_t)psx_mod_read_byte(ADDR_GAUGE) << 24;
+    /* The clone's own hit counter, in Taz's byte for its update. A hero's
+     * hit sets the byte to 0x80 (identity 3) and the invincibility +0x28
+     * 0x200; the frame start (FUN_80011AF0) counts a running one up in bits
+     * 2-5, and Actor_Update clears the invincibility when they are full
+     * (0x3C). Putting Taz's byte back after the clone (the isolation above)
+     * kept the clone's count from ever running: one hit made it invincible
+     * for good. Counted here, once per update, as the frame start would. */
+    uint8_t hit = (uint8_t)st_get(ST_HIT);
+    if ((hit & 0xC0u) && (hit & 0x3Cu) < 0x3Cu)
+        hit = (uint8_t)(hit + 1u);
+    psx_mod_write_byte(ADDR_TAZ_HIT, hit);
     const uint32_t rec = bbt_p3_record();
     const int dead = (psx_mod_read_word(a + A_ACTION) & DEATH_FLAG) != 0;
     uint8_t p2[INPUT_FIELDS], p3[INPUT_FIELDS];
@@ -774,6 +791,7 @@ static void input_post(CPUState* cpu, uint32_t a, uint32_t save)
     write_bytes(ADDR_INPUT_SLOT1, p2, INPUT_FIELDS);
     if (psx_mod_read_byte(ADDR_HERO_DOWN) != (uint8_t)save)
         count("taz_down_kept", 1);
+    st_set(ST_HIT, psx_mod_read_byte(ADDR_TAZ_HIT));
     psx_mod_write_byte(ADDR_HERO_DOWN, (uint8_t)save);
     psx_mod_write_byte(ADDR_TAZ_HEALTH, (uint8_t)(save >> 8));
     psx_mod_write_byte(ADDR_TAZ_HIT, (uint8_t)(save >> 16));

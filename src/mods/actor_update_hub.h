@@ -46,4 +46,12 @@ uint32_t bbt_p3_actor(void);
  * respawn (not updated, not drawn). */
 int bbt_p3_out(void);
 
+/* The third actor's own hit counter (as Taz's 0x8008DA0D: 0x80 while a hit's
+ * invincibility runs, count in bits 2-5), 0 when there is none. */
+uint8_t bbt_p3_hit_flash(void);
+
+/* The real view count (0x8008DE00), also inside the update walk, where the
+ * own view shows the game a count of 1 (src/mods/own_view.c). */
+uint8_t bbt_view_count(void);
+
 #endif

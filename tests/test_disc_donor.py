@@ -227,7 +227,8 @@ class Levels(ProbeCase):
 
     def test_granwich_numbers(self):
         p = self.rows["LEVEL1/GRANNY.BZZ"]["patch"]
-        self.assertEqual((p["actors"], p["ids"], p["anims_mapped"], p["anims_default"]), (2, 68, 10, 57))
+        # 12 mapped: the 10 roles of M2 / M4 plus hurt and death (Phase 5)
+        self.assertEqual((p["actors"], p["ids"], p["anims_mapped"], p["anims_default"]), (2, 68, 12, 55))
 
     def test_texture_plan(self):
         for n, r in self.taz_levels().items():

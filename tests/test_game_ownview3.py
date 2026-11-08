@@ -18,7 +18,10 @@ started by a hit put in RAM (+0x66 damage 6, +0x24 bit 0x40000000, one of
 Actor_Update's hit conditions). Enemies go for the third player too: in
 TRCA01 a Transylvania enemy (model 635) ignores it while the codes 4-7 rule
 is switched off (debug command "ref-third off") and chases and hits it once
-it is on (NOTES.md "Pick-ups and enemies for the third player"). The two plugins that need Actor_Update share one override
+it is on (NOTES.md "Pick-ups and enemies for the third player"). A hit on
+the third actor brings in its own HUD panel (sprites 15 / 16), at the top
+centre of each 72-line band, with the health it has left (NOTES.md "The
+third player's HUD panel"). The two plugins that need Actor_Update share one override
 (bbt.shared/actor-update, activated implicitly). Screenshots go to
 build-tests/out/ownview3/."""
 from __future__ import annotations
@@ -125,6 +128,61 @@ def teleport(c, actor: int, pos) -> None:
     w = c.u32(actor + 0x100)
     c.write_u32(actor + 0x100, (w & 0xFFFF0000) | (z & 0xFFFF))
     c.write_u32(actor + 0x70, 0)
+
+
+HUD_SPRITES = 0x800929F8                  # the HUD actor's 32 sprite nodes (+6 bit 15 hidden)
+H3 = "bbt.third-character.p3-hud."
+P3_BAR_DX, P3_BAR_DY, P3_BAR_W = 33, 24, 80   # the panel's bar from its face; full width
+P3_BAND_FACE = (-58, -104)                # three bands: top centre
+P3_SCREEN_FACE = (-244, -55)              # a full screen: under Bugs' panel
+
+
+def hud_sprite(c, i: int):
+    """(hidden, (x0, y0), width) of HUD sprite i (a quad: xy0 +8, xy1 +0x10)."""
+    r = c.read(c.u32(HUD_SPRITES + 4 * i), 0x28)
+    x0, y0 = struct.unpack_from("<hh", r, 8)
+    x1, = struct.unpack_from("<h", r, 0x10)
+    return bool(struct.unpack_from("<H", r, 6)[0] & 0x8000), (x0, y0), x1 - x0
+
+
+def check_p3_panel(t: unittest.TestCase, c, clone: int, face_xy, shot=None) -> None:
+    """A real hit (2 damage) on the third actor: its panel (NOTES.md "The
+    third player's HUD panel") slides in at face_xy, its bar blinks while
+    the hit's invincibility runs and ends at health * 80 / 6, Bugs' panel
+    stays as it was, the panel slides out again, and the invincibility
+    (+0x28 0x200) ends (it never did: BUGS.md #39)."""
+    hud = c.mod_cmd("bbt.p3hud", "show")
+    bar, face, blk = hud["bar"], hud["face"], int(hud["block"], 16)
+    t.assertTrue(c.wait_until(lambda: hud_sprite(c, face)[0] and hud_sprite(c, bar)[0], 900, 10),
+                 "the third player's panel shows with nothing changing")
+    bugs_face = hud_sprite(c, 1)[0]
+    health = c.s16(clone + 0x3C)
+    hit(c, clone, 2)
+    t.assertTrue(c.wait_until(lambda: c.s16(clone + 0x3C) == health - 2, 120, 1), "the hit did not land")
+    # the hit flash, as Taz's: the bar blinks while the face shows
+    seen = set()
+    for _ in range(40):
+        if not hud_sprite(c, face)[0]:
+            seen.add(hud_sprite(c, bar)[0])
+        c.wait_frames(2)
+    t.assertEqual(seen, {True, False}, "the bar did not blink after the hit")
+    want = (health - 2) * P3_BAR_W // FULL_HEALTH
+    # the bar shrinks a pixel a game frame (descriptor +2 = width shown)
+    t.assertTrue(c.wait_until(lambda: c.s16(blk + 0x12) == want, 300, 2), f"bar width {c.s16(blk + 0x12)}, want {want}")
+    t.assertTrue(c.wait_until(lambda: hud_sprite(c, face)[1] == tuple(face_xy) and not hud_sprite(c, face)[0]
+                              and not hud_sprite(c, bar)[0], 120, 2),
+                 f"face at {hud_sprite(c, face)[1]} (hidden {hud_sprite(c, face)[0]}), want {face_xy}")
+    _, xy, width = hud_sprite(c, bar)
+    t.assertEqual(xy, (face_xy[0] + P3_BAR_DX, face_xy[1] + P3_BAR_DY))
+    t.assertEqual(width, want)
+    t.assertEqual(hud_sprite(c, 1)[0], bugs_face, "Bugs' panel changed")
+    if shot:
+        shot()
+    t.assertTrue(c.wait_until(lambda: hud_sprite(c, face)[0] and hud_sprite(c, bar)[0], 600, 5),
+                 "the panel did not slide out")
+    t.assertGreater(c.counters().get(H3 + "update", 0), 0)
+    # the hit's invincibility (+0x28 0x200) is over before the next test hits
+    t.assertTrue(c.wait_until(lambda: not c.u32(clone + 0x28) & 0x200, 900, 10), "still invincible")
 
 
 def flat(a, b) -> int:
@@ -238,6 +296,10 @@ class ThreeViews(unittest.TestCase):
         self.assertTrue(all(l == r and abs(l - master) <= 2 for l, r in heard),
                         f"volumes {sorted(heard)}, master {master}")
         self.assertGreater(c.counters().get(V + "sound_player_3", 0), 0)
+
+    def test_4b_the_third_player_has_a_hud_panel(self):
+        self.need("three views")
+        check_p3_panel(self, self.c, self.clone(), P3_BAND_FACE, lambda: self.game.shot("4b_hud_panel"))
 
     def test_5_the_third_player_dies_on_its_own(self):
         self.need("three views")
