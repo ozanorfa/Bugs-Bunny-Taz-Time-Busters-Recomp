@@ -6,10 +6,12 @@ player full screen with its own camera.
 
 ## What everyone needs
 
-- This package, the same version on every PC (the launcher refuses a match
-  between different versions or different mods).
+- This package: the very same ZIP on every PC. A different package may be
+  refused, or start and then drift apart during play.
 - Their own copy of the game disc image (Bugs Bunny & Taz: Time Busters,
-  USA, `.cue` + `.bin`). The launcher checks it is the original disc.
+  USA, `.cue` + `.bin`). The launcher checks it is the original disc. For a
+  match every PC's dump must be the same one: the room compares the discs,
+  and a different dump of the game is refused.
 - A gamepad or the keyboard (Settings -> Input). On your PC, your controller
   is your player.
 - For play over the internet: Radmin VPN (or any VPN that puts the PCs on

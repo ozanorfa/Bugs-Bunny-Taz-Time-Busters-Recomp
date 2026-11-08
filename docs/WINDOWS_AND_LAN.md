@@ -181,6 +181,54 @@ Then:
   the first difference. None means both machines ran the same game. The
   `rb live dig ... sim=...` lines every 32 ticks are the per-tick digests.
 
+## 8. The package for the players (one ZIP)
+
+The other players build nothing. One Windows PC builds the package, and
+every player gets the same ZIP (`psxrecomp/docs/RELEASING_A_TITLE.md`).
+
+Tools on that PC, besides Git (section 1). The packager uses MSYS2
+MinGW-w64, not the clang toolchain of section 1:
+
+- [MSYS2](https://www.msys2.org/), installed to `C:\msys64`. In its
+  "MSYS2 MINGW64" shell:
+
+  ```sh
+  pacman -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+  ```
+
+  This puts `cmake.exe`, `ninja.exe`, `gcc.exe`, `g++.exe` and
+  `objdump.exe` in `C:\msys64\mingw64\bin` (the packager's default
+  `--toolchain-bin`). MSYS2's `bash.exe` is used if the recompiled
+  OpenBIOS has to be regenerated.
+- Python 3.11+ (`py` or `python` on PATH).
+- Internet on the first run: SDL3 and the bundled overlay compiler are
+  downloaded and checked by SHA-256.
+
+In PowerShell, in the clone from section 2 (`C:\RecompDev\BugsBunnyTazRecomp`,
+the disc at `..\disc` as in section 3):
+
+```powershell
+psxrecomp/tools/package_title_release.ps1 --channel public --platform windows
+```
+
+The packager refuses a tree with uncommitted changes or a submodule off its
+pin, so build from a clean clone. It regenerates the game code from the
+disc, builds a Release with this repo's `packaging/release.toml` (the
+3-player config, netplay, 5 seats), then checks and verifies the result:
+
+- `dist\BugsBunnyTazRecomp-v<VERSION>-windows-x64.zip` (`VERSION` is the
+  file in the repo root, now 0.1.0)
+- a `.sha256` file next to it
+
+**The ZIP is what every player gets.** It holds no disc, BIOS dump, saves or
+settings; the packager refuses a package with any of them. Every player
+needs their own disc dump with the MD5 of section 3.
+
+Every player must run the same ZIP. A ZIP built from another commit
+differs in our mod code, and the match then drifts apart (the table at
+the top). Before building a new ZIP, raise `VERSION`, so players can see
+which one they have.
+
 ## Known limits
 
 - Three players over three PCs: the launcher's room takes its seat count
@@ -191,10 +239,12 @@ Then:
   room has three seats. Verified with three launchers on one machine
   (`tests/test_game_lanroom.py` `test_three_pcs_in_one_room`); not yet on
   three real PCs. The player-facing steps are in `docs/PLAYING_TOGETHER.md`.
-- A shareable package: `psxrecomp/tools/package_title_release.ps1 --channel
-  public --platform windows` on the Windows PC (the framework's packager
-  only runs on Windows and Linux) with `packaging/release.toml`. Not run
-  yet.
+- The shareable package (section 8) has not been built yet; the
+  framework's packager only runs on Windows and Linux.
+- A player on the Mac with Windows players: the Mac builds are other
+  builds than the Windows ZIP, and a Mac <-> Windows match is not promised
+  by the framework docs. Until a real match shows it works, every player
+  uses the same Windows ZIP.
 - Overlay code is compiled per machine at runtime
   (`overlay_captures.json` next to the executable, not in git), so the two
   machines' overlay caches differ. The digest comparison above is what
