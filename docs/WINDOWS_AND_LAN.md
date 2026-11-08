@@ -184,9 +184,17 @@ Then:
 ## Known limits
 
 - Three players over three PCs: the launcher's room takes its seat count
-  from `game.toml` `players = 2`. The 3-peer matches so far ran from the
-  command line with a local 3-player copy of `game.toml`
-  (`tests/test_game_net.py` tests 5 and 6). Not ready from the launcher yet.
+  from the `--game` config's `players`. Start every PC with the tracked
+  3-player config, `game_3p.toml` (generated from `game.toml` by
+  `tools/make_3p_toml.py`; the release package ships it as its
+  `game.toml`): `BugsBunnyTaz_Recompiled --game game_3p.toml`. Then the
+  room has three seats. Verified with three launchers on one machine
+  (`tests/test_game_lanroom.py` `test_three_pcs_in_one_room`); not yet on
+  three real PCs. The player-facing steps are in `docs/PLAYING_TOGETHER.md`.
+- A shareable package: `psxrecomp/tools/package_title_release.ps1 --channel
+  public --platform windows` on the Windows PC (the framework's packager
+  only runs on Windows and Linux) with `packaging/release.toml`. Not run
+  yet.
 - Overlay code is compiled per machine at runtime
   (`overlay_captures.json` next to the executable, not in git), so the two
   machines' overlay caches differ. The digest comparison above is what

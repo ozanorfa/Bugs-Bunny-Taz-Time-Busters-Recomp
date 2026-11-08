@@ -16,6 +16,7 @@ from bbt import config, game  # noqa: E402
 from bbt.iso9660 import Iso  # noqa: E402
 from bbt.png import dark_rows, row_means  # noqa: E402
 
+ROOT = config.PROJECT
 sys.path.insert(0, str(config.PROJECT / "tools" / "bouze"))
 import bouze  # noqa: E402
 import keyframes  # noqa: E402
@@ -385,6 +386,28 @@ class NetHelpers(unittest.TestCase):
             self.assertTrue((link.parent / "mods" / "bundled" / "pkg" / "manifest.toml").is_file())
             self.assertIn('id = "trca01"', (link.parent / "mods" / "state.toml").read_text())
             self.assertEqual((build / "mods" / "state.toml").read_text(), "the player's selection\n")
+
+
+class ThreePlayerConfig(unittest.TestCase):
+    """game_3p.toml (the shipped 3-player config) is tools/make_3p_toml.py's
+    output for the current game.toml: only players and the multitap differ,
+    so a change to game.toml (e.g. its [timing] block) cannot be missing
+    from it again (it was, 2026-11-08: three views ran at ~55% speed)."""
+
+    def test_it_is_up_to_date(self):
+        r = subprocess.run([sys.executable, str(ROOT / "tools" / "make_3p_toml.py"), "--check"],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_only_players_and_the_multitap_differ(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import make_3p_toml
+        src = (ROOT / "game.toml").read_text(encoding="utf-8")
+        out = make_3p_toml.three_player(src)
+        a = [l for l in src.splitlines() if not l.startswith("#")]
+        b = [l for l in out.splitlines() if not l.startswith("#")]
+        extra = [l for l in b if l not in a]
+        self.assertEqual(sorted(extra), ["multitap_analog = false", "multitap_port = 2", "players = 3"])
 
 
 if __name__ == "__main__":

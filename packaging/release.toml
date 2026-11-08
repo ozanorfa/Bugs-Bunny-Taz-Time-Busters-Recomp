@@ -3,13 +3,20 @@
 schema = 1
 
 [product]
-name = "bbt"
-display_name = "BugsBunnyTaz"
+name = "BugsBunnyTazRecomp"
+display_name = "Bugs Bunny & Taz: Time Busters Recompiled"
 exe_name = "BugsBunnyTaz_Recompiled"
 version_file = "VERSION"
+# The shipped config is the three-player one (players 3, a multitap on port
+# 2; generated from game.toml by tools/make_3p_toml.py): up to three PCs in
+# one LAN room, each with its own player. game.toml stays the codegen config.
+player_game_toml = "game_3p.toml"
 
 [build]
-cmake_args = ["-DPSX_SDL_BACKEND=SDL3", "-DPSX_PGXP_VARIANT=OFF"]
+# Netplay (LAN / Direct IP, which is also what Radmin VPN uses; no online
+# ICE) and 5 controller seats for the third player (docs/WINDOWS_AND_LAN.md).
+cmake_args = ["-DPSX_SDL_BACKEND=SDL3", "-DPSX_PGXP_VARIANT=OFF", "-DPSX_NETPLAY=ON",
+              "-DRNET_ENABLE_ICE=OFF", "-DBBT_MAX_PLAYERS=5"]
 # Selective PGO defaults on for supported native GNU/Ninja toolchains. Do not
 # add per-title profile paths or reuse another build's training data.
 
@@ -23,7 +30,7 @@ ship = true
 
 [payload]
 start_here = "packaging/release/START_HERE.txt"
-files = ["README.md"]
+files = ["README.md", { from = "docs/PLAYING_TOGETHER.md", to = "PLAYING_TOGETHER.md" }]
 
 [linux]
 app_run = "packaging/linux/AppRun"

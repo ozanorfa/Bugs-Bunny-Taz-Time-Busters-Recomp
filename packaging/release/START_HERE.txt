@@ -1,11 +1,27 @@
-BugsBunnyTaz @VERSION@
+Bugs Bunny & Taz: Time Busters Recompiled @VERSION@
 
-Launch BugsBunnyTaz_Recompiled on Windows, or the AppImage on Linux, and choose your
-legally owned BugsBunnyTaz disc when prompted. No game disc or retail BIOS
-image is included. OpenBIOS is bundled.
+A native PC version of the PlayStation game, with Daffy Duck as a third
+playable character and up to three players, each on their own PC.
 
-Use the launcher to configure controls and mods. Internal Resolution starts
-at 4x on a fresh profile; its 1x through 32x choices remain subject to your
-GPU's texture and memory limits. Existing saved choices remain yours.
+1. You need your own copy of the game disc (Bugs Bunny & Taz: Time Busters,
+   USA). No game data and no retail BIOS are included; OpenBIOS is bundled.
+2. Start BugsBunnyTaz_Recompiled and choose your disc image (.cue) when
+   asked. The launcher checks that it is the original USA disc.
+3. Controls: Settings -> Input in the launcher. On your own PC your own
+   gamepad or keyboard is your player.
 
-Keep your native memory cards and settings when updating the application.
+Playing together (LAN or Radmin VPN): see PLAYING_TOGETHER.md. In short:
+- The host turns on, once, in Mods: "Third player" (Daffy Duck), "Two
+  views" (each PC shows its own player full screen) and "Quick start".
+  Guests do not need to: the room uses the host's mods.
+- Host: NETPLAY -> LAN / Direct IP -> Host Lobby -> Create Lobby.
+  Guests: NETPLAY -> LAN / Direct IP -> Join Direct with the host's IP.
+- In the game: NEW GAME -> TWO PLAYERS. Seat 1 is Bugs, seat 2 Taz, seat 3
+  Daffy.
+
+Saves: a match is played on the host's memory card, so the host keeps the
+campaign. Each guest also keeps a copy of it (saves/netplay/card1.mcd); to
+continue the same campaign as host later, pick that file for memory card 1
+in the launcher's Memory Card panel (Browse).
+
+Keep your saves/ folder and settings when updating the application.

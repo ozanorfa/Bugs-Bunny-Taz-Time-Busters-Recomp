@@ -32,12 +32,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
 from bbt.client import DebugClient, pad  # noqa: E402
-from bbt.game import LEVEL_GRANNY, Player, game_toml_copy  # noqa: E402
+from bbt.game import LEVEL_GRANNY, Player, game_toml_copy, three_player_toml  # noqa: E402
 from bbt.net import _peer_folder, digests, free_tcp_port  # noqa: E402
 
 HOST_MODS = {"trca01": True, "bbt.quick-start/quick-start": True}
 GUEST_MODS: dict = {}
 T = "bbt.third-character.trca01."
+A3 = "bbt.third-character.p3-actor."
+V = "bbt.own-view.two-views."
+# Phase 6: three PCs, each its own player and full-screen view (the third
+# character is Daffy, the default), host's selection only.
+HOST_MODS_3 = {"p3": True, "bbt.own-view/two-views": True, "bbt.quick-start/quick-start": True}
 Q = "bbt.quick-start."
 
 # Logical positions in the 1100x750 launcher (from its screenshots).
@@ -104,14 +109,14 @@ class LanRoom(unittest.TestCase):
             finally:
                 log.close()
 
-    def start(self, name: str, mods: dict, steps: str):
+    def start(self, name: str, mods: dict, steps: str, toml: Path | None = None):
         folder = self.out / name
         link = _peer_folder(self.build, self.exe, folder, mods)
         port = free_tcp_port()
         log = open(folder / "game.log", "w", encoding="utf-8")
         env = dict(os.environ, LNG_TEST_HIDDEN="1", PSX_HIDDEN_WINDOW="1", PSX_DEBUG_SERVER="1",
                    LNG_SCRIPT=script(self.out, name.capitalize(), steps))
-        p = subprocess.Popen([str(link), "--game", str(self.toml.resolve()), "--disc",
+        p = subprocess.Popen([str(link), "--game", str((toml or self.toml).resolve()), "--disc",
                               str(self.cue), "--memcard-dir", str((folder / "cards").resolve()),
                               "--debug-port", str(port)],
                              cwd=str(folder), stdout=log, stderr=subprocess.STDOUT, env=env)
@@ -173,6 +178,95 @@ class LanRoom(unittest.TestCase):
         self.assertGreater(common[-1] if common else 0, loaded_at + 100)
         self.assertEqual((guest_dir / "mods" / "state.toml").read_text(encoding="utf-8"), guest_state,
                          "the room changed the guest's own mod selection")
+        self.assertEqual(config.game_toml().read_bytes(), self.repo_toml,
+                         "the repository's game.toml was written")
+
+    def test_three_pcs_in_one_room(self):
+        """Three launchers, one LAN room (a 3-player game.toml: players 3,
+        multitap on port 2), two guests joining by Direct IP: all three play
+        in the host's plan, the third PC drives the third character (Daffy),
+        each PC draws its own player's view full screen, the digests agree,
+        and each guest keeps a copy of the match's memory card (the host's,
+        sent at the start: docs/NETPLAY.md "Bring your own memory card")."""
+        o = self.out
+        toml3 = three_player_toml(config.game_toml(), o / "game_3p.toml")
+        self.start("host", HOST_MODS_3,
+                   f"click:{HOST_LOBBY};wait:40;click:{CREATE_LOBBY};wait:2000;"
+                   f"shot:{o}/3p_1_host_room.png;click:{PLAY};wait:20000", toml3)
+        time.sleep(4)
+        g1 = self.start("guest", GUEST_MODS,
+                        f"click:{JOIN_DIRECT};wait:30;click:{JOIN_DIRECT_OK};wait:300;"
+                        f"shot:{o}/3p_2_guest_room.png;wait:20000", toml3)
+        time.sleep(4)
+        # a Join Direct that got no answer leaves the dialog open: ask again
+        g2 = self.start("guest2", GUEST_MODS,
+                        f"click:{JOIN_DIRECT};wait:30;click:{JOIN_DIRECT_OK};wait:300;"
+                        f"shot:{o}/3p_3a_guest2.png;click:{JOIN_DIRECT_OK};wait:300;"
+                        f"shot:{o}/3p_3_guest2_room.png;wait:20000", toml3)
+        # the hidden launchers draw slower under load (the full suite): the
+        # host's 2000-frame wait before PLAY took over 3 minutes there
+        deadline, running = time.monotonic() + 400, False
+        while time.monotonic() < deadline and not running:
+            for p, _, _ in self.procs:
+                self.assertIsNone(p.poll(), "a launcher exited before the match")
+            try:
+                st = [c.send({"cmd": "netplay_status"}) for _, c, _ in self.procs]
+                running = all(s.get("active") == 1 and s.get("tick", 0) > 0 for s in st)
+            except OSError:
+                pass
+            time.sleep(1)
+        self.assertTrue(running, "the match did not start (see build-tests/out/lanroom/3p_*.png)")
+        for _, c, _ in self.procs:
+            s = c.send({"cmd": "netplay_status"})
+            self.assertEqual((s["rollback"], s["players"], s["desync"]), (1, 3, 0), str(s))
+        c = self.procs[0][1]
+        p = Player(_Run(c))
+        self.assertTrue(c.wait_until(lambda: p.level() == 2, 3000, 2), "no language screen")
+        c.wait_frames(200)
+        self.assertTrue(p.language_to_title(), "no title")
+        c.wait_frames(240); c.press(pad("start")); c.wait_frames(120)
+        c.press(pad("cross")); c.wait_frames(60)          # NEW GAME
+        c.press(pad("down")); c.wait_frames(30)
+        c.press(pad("cross")); c.wait_frames(90)          # TWO PLAYERS
+        c.press(pad("cross"))                             # START GAME
+        self.assertTrue(c.wait_until(lambda: p.level() == LEVEL_GRANNY and p.players_ready(), 3000, 2),
+                        "Granwich did not load")
+        loaded_at = c.frame()
+        self.assertTrue(c.wait_until(lambda: all(cc.counters().get(A3 + "spawned") for _, cc, _ in self.procs),
+                                     900, 5), "no third character on every PC")
+        for _ in range(8):                                # the opening dialogs
+            c.press(pad("cross")); c.wait_frames(150)
+        # the third PC's own pad drives the third character
+        third = self.procs[2][1]
+        clone = lambda cc: cc.u32(int(cc.mod_cmd("bbt.p3actor", "show")["state"], 16) + 4)
+        a = clone(c)
+        start = Player(_Run(c)).pos(a)
+        third.hold(pad("right")); c.wait_frames(90); third.release(); c.wait_frames(60)
+        moved = abs(Player(_Run(c)).pos(a)[0] - start[0]) + abs(Player(_Run(c)).pos(a)[2] - start[2])
+        self.assertGreater(moved, 200, "the third PC did not move the third character")
+        for i, (_, cc, _) in enumerate(self.procs):
+            cs = cc.counters()
+            with self.subTest(peer=i):
+                self.assertGreaterEqual(cs.get(A3 + "daffy_moves", 0), 40, "not Daffy")
+                self.assertGreater(cs.get(V + f"local_view_{i}", 0), 100, "own view not drawn")
+                self.assertEqual([cs.get(V + f"local_view_{v}", 0) for v in range(3) if v != i], [0, 0],
+                                 "drew another player's view")
+        self.tearDown()
+        self.procs = []
+        logs = [digests(o / n / "game.log") for n in ("host", "guest", "guest2")]
+        common = sorted(set(logs[0]) & set(logs[1]) & set(logs[2]))
+        print(f"\n    {len(common)} ticks compared up to {common[-1] if common else None}, "
+              f"Granwich at ~{loaded_at}", file=sys.stderr)
+        self.assertEqual([t for t in common if not logs[0][t] == logs[1][t] == logs[2][t]], [],
+                         "the peers' digests differ")
+        self.assertGreater(common[-1] if common else 0, loaded_at + 100)
+        # each guest keeps the match's card 1 (the host's) in its netplay sandbox
+        host_card = (o / "host" / "cards" / "card1.mcd")
+        for g in (g1, g2):
+            copy = g / "cards" / "netplay" / "card1.mcd"
+            self.assertTrue(copy.is_file(), f"no match card kept on {g.name}")
+            if host_card.is_file():
+                self.assertEqual(copy.read_bytes(), host_card.read_bytes(), f"{g.name}'s copy differs")
         self.assertEqual(config.game_toml().read_bytes(), self.repo_toml,
                          "the repository's game.toml was written")
 
