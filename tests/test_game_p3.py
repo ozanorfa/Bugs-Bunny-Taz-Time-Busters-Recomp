@@ -59,12 +59,14 @@ CASES = [
 ]
 
 
+# The enemy, not the default Daffy: these tests check what was verified with it.
+ENEMY = {"enabled": True, "values": {"character": "enemy"}}
 class ThirdPlayer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         toml = config.out_dir() / "game_3p.toml"
         three_player_toml(config.game_toml(), toml)
-        start_run(cls, config.p3_build(), "p3", {"p3": True}, toml=toml)
+        start_run(cls, config.p3_build(), "p3", {"p3": ENEMY}, toml=toml)
 
     def need(self, *stages: str) -> None:
         for stage in stages:

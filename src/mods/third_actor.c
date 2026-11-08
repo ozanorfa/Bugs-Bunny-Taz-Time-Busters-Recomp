@@ -74,6 +74,8 @@
 
 #include "actor_update_hub.h"
 #include "clone_res.h"
+#include "daffy_moves.h"
+#include "daffy_profile.h"
 #include "cpu_state.h"
 #include "donor_runtime.h"
 #include "func_override.h"
@@ -187,12 +189,16 @@ static int16_t g_scale = 0x1000 * DEFAULT_SIZE_PERCENT / 100;
 /* The third actor's own copy of the donor: the shared one (donor_runtime.c,
  * also Phase 3's) plus the hold animation (trca01_profile.h). */
 static Donor g_donor;
-static DonorAnimMap g_map[TAZ_MAP_COUNT + TAZ_IDLE_COUNT];
+#define MAP_CAP 112
+static DonorAnimMap g_map[MAP_CAP];
 static int g_map_count;
 static uint16_t g_defaults[DONOR_DEFAULT_COUNT];
 static int g_default_count;
 
-#define RT (bbt_donor_runtime())
+/* Which character the clone is drawn as (option "character", read at
+ * activation): 0 the TRCA01 enemy, 1 Daffy (daffy_profile.h). */
+static int g_daffy_char;
+#define RT (g_daffy_char ? bbt_daffy_runtime() : bbt_donor_runtime())
 
 /* psx_mod_counter_add keeps the name pointer: literal names only. */
 #define count(event, n) psx_mod_counter_add(PLUGIN_ACTOR "." event, (uint32_t)(n))
@@ -217,7 +223,7 @@ static void prepare(void)
 {
     if (g_prepared != 0 || !g_block)
         return;
-    if (bbt_donor_runtime_load() != 1) {
+    if ((g_daffy_char ? bbt_daffy_runtime_load() : bbt_donor_runtime_load()) != 1) {
         if (RT->state < 0)
             g_prepared = -1;
         return;
@@ -226,17 +232,49 @@ static void prepare(void)
         g_prepared = -1;
         return;
     }
-    /* Roles: Phase 3's table, plus Taz's idle chain on the enemy's stance at
-     * its own length and speed; everything else holds a still pose. */
     g_map_count = 0;
-    for (int i = 0; i < TAZ_MAP_COUNT; ++i)
-        g_map[g_map_count++] = kTazToTrca01[i];
-    for (int i = 0; i < TAZ_IDLE_COUNT; ++i)
-        g_map[g_map_count++] = (DonorAnimMap){kTazIdleIds[i], DONOR_IDLE_SUB};
-    if (donor_add_hold(&g_donor, DONOR_IDLE_SUB, DONOR_SUB_HOLD, DONOR_HOLD_FRAMES)) {
+    uint16_t hold_src = DONOR_IDLE_SUB;
+    if (g_daffy_char) {
+        /* Daffy (Phase 5, first step): his set-up, the synthetic spin
+         * (spin start too: it must name the attach node for the tornado),
+         * and everything else on the still pose of his only animation. */
+        static const DonorAnimMap kDaffy[] = {
+            {0x0001u, 0x0001u},
+            {0x0072u, DONOR_SUB_SPIN}, {0x004Fu, DONOR_SUB_SPIN}, {0x0097u, DONOR_SUB_SPIN},
+        };
+        for (int i = 0; i < (int)(sizeof kDaffy / sizeof kDaffy[0]); ++i)
+            g_map[g_map_count++] = kDaffy[i];
+        hold_src = DAFFY_POSE_SUB;
+        /* Bugs' moves retargeted onto him (daffy_moves.c), and the still
+         * pose from Bugs' idle */
+        BbtDaffyMoveStats ms;
+        const int k = bbt_daffy_add_moves(&g_donor, g_map + g_map_count, MAP_CAP - g_map_count,
+                                          DONOR_SUB_HOLD, DONOR_HOLD_FRAMES, &ms);
+        if (k > 0)
+            g_map_count += k;
+        count("daffy_moves", ms.moves);
+        count("daffy_move_bytes", ms.bytes);
+        count("daffy_without_source", ms.without_source);
+        count("daffy_failed", ms.failed);
+        if (ms.hold)
+            hold_src = 0;
+    } else {
+        /* Roles: Phase 3's table, plus Taz's idle chain on the enemy's
+         * stance at its own length and speed; everything else holds a
+         * still pose. */
+        for (int i = 0; i < TAZ_MAP_COUNT; ++i)
+            g_map[g_map_count++] = kTazToTrca01[i];
+        for (int i = 0; i < TAZ_IDLE_COUNT; ++i)
+            g_map[g_map_count++] = (DonorAnimMap){kTazIdleIds[i], DONOR_IDLE_SUB};
+    }
+    if (!hold_src || donor_add_hold(&g_donor, hold_src, DONOR_SUB_HOLD, DONOR_HOLD_FRAMES)) {
         g_defaults[0] = DONOR_SUB_HOLD;
         g_default_count = 1;
         count("hold_ready", 1);
+    } else if (g_daffy_char) {
+        g_prepared = -1;
+        count("hold_unavailable", 1);
+        return;
     } else {
         /* Without it: Phase 3's standing defaults (moving loops, cut). */
         for (int i = 0; i < DONOR_DEFAULT_COUNT; ++i)
@@ -295,6 +333,16 @@ static void prepare(void)
 static void read_size_option(void)
 {
     char v[16];
+    /* the manifest's default is Daffy (Phase 5) */
+    g_daffy_char = psx_mod_option_value("bbt.third-character", "p3", "character", v, sizeof v)
+                       ? strcmp(v, "daffy") == 0
+                       : 1;
+    if (g_daffy_char) {
+        /* his own size: a little shorter than Bugs, as in the cartoons; the
+         * size option is the enemy's */
+        g_scale = 0x1000;
+        return;
+    }
     int pct = DEFAULT_SIZE_PERCENT;
     if (psx_mod_option_value("bbt.third-character", "p3", "size", v, sizeof v)) {
         const int p = atoi(v);
@@ -465,8 +513,10 @@ static void spawn(CPUState* cpu, uint32_t taz)
     static uint8_t records[CLONE_RES_MAX * ANIM_RECORD_SIZE];
     CloneResStats st;
     const int nrec = clone_build_resources(in, n, &g_donor, &g_layout, g_map, g_map_count,
-                                           g_defaults, g_default_count, kTazIdleIds,
-                                           TAZ_IDLE_COUNT, nodes, entries, records, &st);
+                                           g_defaults, g_default_count,
+                                           g_daffy_char ? NULL : kTazIdleIds,
+                                           g_daffy_char ? 0 : TAZ_IDLE_COUNT,
+                                           nodes, entries, records, &st);
     if (nrec < 0) {
         count("spawn_bad_list", 1);
         return;

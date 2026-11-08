@@ -39,6 +39,8 @@ from bbt.game import LEVEL_GRANNY, LEVEL_TRCA01, three_player_toml  # noqa: E402
 from test_game_stock import moved, start_run  # noqa: E402
 
 V = "bbt.own-view.two-views."
+# The enemy, not the default Daffy: these tests check what was verified with it.
+ENEMY = {"enabled": True, "values": {"character": "enemy"}}
 A3 = "bbt.third-character.p3-actor."
 VIEW_COUNT, FOLLOWED = 0x8008DE00, 0x80093C58
 CAM_RECORD, CAM_RECORD_BYTES = 0x800964C4, 0x2C0
@@ -203,7 +205,7 @@ class ThreeViews(unittest.TestCase):
         toml = config.out_dir() / "game_3p_ownview3.toml"
         three_player_toml(config.game_toml(), toml)
         start_run(cls, config.p3_build(), "ownview3",
-                  {"p3": True, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True},
+                  {"p3": ENEMY, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True},
                   toml=toml)
 
     def need(self, stage: str) -> None:
@@ -355,7 +357,7 @@ class EnemiesSeeTheThirdPlayer(unittest.TestCase):
         toml = config.out_dir() / "game_3p_ownview3_enemy.toml"
         three_player_toml(config.game_toml(), toml)
         start_run(cls, config.p3_build(), "ownview3_enemy",
-                  {"p3": True, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True},
+                  {"p3": ENEMY, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True},
                   toml=toml)
 
     def clone(self) -> int:

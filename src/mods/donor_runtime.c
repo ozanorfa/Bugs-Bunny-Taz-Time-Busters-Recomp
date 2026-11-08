@@ -11,50 +11,69 @@
 #include <string.h>
 
 #include "mod_plugins.h"
+#include "daffy_profile.h"
 #include "trca01_profile.h"
 
 static BbtDonorRuntime g_rt;
+static BbtDonorRuntime g_daffy;
 
 const BbtDonorRuntime* bbt_donor_runtime(void)
 {
     return &g_rt;
 }
 
-int bbt_donor_runtime_load(void)
+const BbtDonorRuntime* bbt_daffy_runtime(void)
 {
-    if (g_rt.state != 0)
-        return g_rt.state;
+    return &g_daffy;
+}
+
+/* One character from one level file: by actor type, or by resource ids
+ * when `ids` is given. */
+static int load(BbtDonorRuntime* rt, const char* name, uint32_t actor_type,
+                const uint16_t* ids, int id_count, uint16_t model_sub)
+{
+    if (rt->state != 0)
+        return rt->state;
     uint32_t size = 0;
-    if (!psx_mod_read_disc_file(DONOR_FILE, NULL, 0, &size) || size == 0)
+    if (!psx_mod_read_disc_file(name, NULL, 0, &size) || size == 0)
         return 0;                  /* no disc mounted yet: try again later */
     uint8_t* file = (uint8_t*)malloc(size);
     if (!file)
         return 0;
     uint32_t got = 0;
-    int ok = psx_mod_read_disc_file(DONOR_FILE, file, size, &got) && got == size &&
-             donor_extract(file, size, DONOR_ACTOR_TYPE, &g_rt.donor);
+    int ok = psx_mod_read_disc_file(name, file, size, &got) && got == size &&
+             (ids ? donor_extract_ids(file, size, ids, id_count, &rt->donor)
+                  : donor_extract(file, size, actor_type, &rt->donor));
     if (ok) {
         /* Without the synthetic spin, the spin falls back to a default
          * pose (no tornado): reported, not fatal. */
-        g_rt.spin_node = donor_add_spin(&g_rt.donor, DONOR_SUB_SPIN, DONOR_SPIN_FRAMES);
-        /* Textures: without them the donor keeps TRCA01's texture
-         * positions (right only in TRCA01): reported, not fatal. */
+        rt->spin_node = donor_add_spin(&rt->donor, DONOR_SUB_SPIN, DONOR_SPIN_FRAMES);
+        /* Textures: without them the donor keeps its own level's texture
+         * positions (right only there): reported, not fatal. */
         const DonorBlob* model = NULL;
-        for (int i = 0; i < g_rt.donor.model_count; ++i)
-            if (g_rt.donor.models[i].sub == TAZ_MODEL_SUB)
-                model = &g_rt.donor.models[i];
-        g_rt.tex_ready = model && donor_tex_extract(file, size, &g_rt.donor, model, &g_rt.tex);
-        g_rt.state = 1;
+        for (int i = 0; i < rt->donor.model_count; ++i)
+            if (rt->donor.models[i].sub == model_sub)
+                model = &rt->donor.models[i];
+        rt->tex_ready = model && donor_tex_extract(file, size, &rt->donor, model, &rt->tex);
+        rt->state = 1;
     } else {
-        donor_free(&g_rt.donor);
-        g_rt.state = -1;
+        donor_free(&rt->donor);
+        rt->state = -1;
     }
     free(file);
-    return g_rt.state;
+    return rt->state;
 }
 
-/* Upload staging: pixels go to guest RAM below the stack pointer (unused
- * at that moment), are uploaded synchronously and the bytes restored. */
+int bbt_donor_runtime_load(void)
+{
+    return load(&g_rt, DONOR_FILE, DONOR_ACTOR_TYPE, NULL, 0, TAZ_MODEL_SUB);
+}
+
+int bbt_daffy_runtime_load(void)
+{
+    return load(&g_daffy, DAFFY_FILE, 0, kDaffyResIds, DAFFY_RES_COUNT, DAFFY_MODEL_SUB);
+}
+
 #define STAGE_GAP 0x100u
 #define STAGE_MAX 0x800u
 

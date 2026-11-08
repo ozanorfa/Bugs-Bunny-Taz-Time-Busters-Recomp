@@ -77,8 +77,10 @@ static void resource_info(const uint8_t* s, const BouzeRecord* r, ResInfo* ri)
     }
 }
 
-int donor_extract(const uint8_t* file, size_t file_len, uint32_t actor_type,
-                  Donor* out)
+/* The ids to take: those the actors of `actor_type` reference, or, when
+ * `res_ids` is given, exactly those. */
+static int extract(const uint8_t* file, size_t file_len, uint32_t actor_type,
+                   const uint16_t* res_ids, int res_count, Donor* out)
 {
     memset(out, 0, sizeof(*out));
     BouzeHeader h;
@@ -97,8 +99,17 @@ int donor_extract(const uint8_t* file, size_t file_len, uint32_t actor_type,
         goto out;
 
     int distinct = 0;
-    if (collect_actor_ids(s, slen, actor_type, ids, &distinct) <= 0)
+    if (res_ids) {
+        for (int i = 0; i < res_count; ++i)
+            if (!id_has(ids, res_ids[i])) {
+                id_set(ids, res_ids[i]);
+                ++distinct;
+            }
+        if (distinct == 0)
+            goto out;
+    } else if (collect_actor_ids(s, slen, actor_type, ids, &distinct) <= 0) {
         goto out;
+    }
 
     /* Two passes over the resource records: size the image, then fill it. */
     for (int pass = 0; pass < 2; ++pass) {
@@ -154,6 +165,21 @@ out:
     if (!ok)
         donor_free(out);
     return ok;
+}
+
+int donor_extract(const uint8_t* file, size_t file_len, uint32_t actor_type, Donor* out)
+{
+    return extract(file, file_len, actor_type, NULL, 0, out);
+}
+
+int donor_extract_ids(const uint8_t* file, size_t file_len, const uint16_t* res_ids,
+                      int res_count, Donor* out)
+{
+    if (!res_ids || res_count <= 0) {
+        memset(out, 0, sizeof(*out));
+        return 0;
+    }
+    return extract(file, file_len, 0, res_ids, res_count, out);
 }
 
 int donor_find_model(const uint8_t* s, size_t len, uint32_t actor_type, uint16_t sub,
@@ -409,6 +435,29 @@ int donor_copy(const Donor* src, Donor* out)
     memcpy(img, src->image, src->image_size);
     *out = *src;
     out->image = img;
+    return 1;
+}
+
+int donor_append_anim(Donor* d, uint16_t sub, const uint8_t* blob, uint32_t size)
+{
+    if (!d->image || !blob || size < 16u || d->anim_count >= DONOR_MAX_ANIMS ||
+        find_sub(d->anims, d->anim_count, sub))
+        return 0;
+    const uint32_t at = (d->image_size + 3u) & ~3u;
+    uint8_t* img = (uint8_t*)realloc(d->image, at + size + 3u);
+    if (!img)
+        return 0;
+    d->image = img;
+    memset(img + d->image_size, 0, at + size + 3u - d->image_size);
+    memcpy(img + at, blob, size);
+    DonorBlob* nb = &d->anims[d->anim_count++];
+    memset(nb, 0, sizeof(*nb));
+    nb->sub = sub;
+    nb->off = at;
+    nb->size = size;
+    nb->frames = (uint16_t)(blob[4] | (blob[5] << 8));
+    nb->ticks = (uint8_t)(blob[2] >> 1);
+    d->image_size = (at + size + 3u) & ~3u;
     return 1;
 }
 

@@ -32,6 +32,7 @@ static const Suite kSuites[] = {
     {"donor", kDonorTests, &kDonorTestCount},
     {"donor_tex", kDonorTexTests, &kDonorTexTestCount},
     {"clone_res", kCloneResTests, &kCloneResTestCount},
+    {"retarget", kRetargetTests, &kRetargetTestCount},
 };
 
 static int run(const char* filter)

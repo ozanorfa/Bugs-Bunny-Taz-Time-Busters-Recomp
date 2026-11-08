@@ -56,5 +56,7 @@ extern const TestCase kDonorTexTests[];
 extern const int kDonorTexTestCount;
 extern const TestCase kCloneResTests[];
 extern const int kCloneResTestCount;
+extern const TestCase kRetargetTests[];
+extern const int kRetargetTestCount;
 
 #endif /* BBT_CHECK_H */

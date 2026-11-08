@@ -42,6 +42,11 @@ typedef struct Donor {
  * file. Returns 1 on success, 0 if the file or actor is not as expected. */
 int donor_extract(const uint8_t* file, size_t file_len, uint32_t actor_type,
                   Donor* out);
+/* The same for exactly the resource records with the given ids (for an
+ * actor whose header type is shared with others, e.g. 0 for Daffy in
+ * LEVEL1/RETRY.BZZ). Returns 1 on success. */
+int donor_extract_ids(const uint8_t* file, size_t file_len, const uint16_t* res_ids,
+                      int res_count, Donor* out);
 void donor_free(Donor* d);
 
 /* Find, in a decompressed record stream, the model resource of kind `sub`
@@ -74,6 +79,11 @@ int donor_copy(const Donor* src, Donor* out);
  * character's frame count (its state timing) without the jitter of a
  * moving donor loop cut short. Returns 1 on success. */
 int donor_add_hold(Donor* d, uint16_t src_sub, uint16_t hold_sub, uint16_t frames);
+
+/* Append an animation blob (8-byte header, keyframes) built elsewhere
+ * (e.g. retarget.c) with id `sub`. Returns 1 on success, 0 when the id is
+ * taken or there is no room. */
+int donor_append_anim(Donor* d, uint16_t sub, const uint8_t* blob, uint32_t size);
 
 /* Which donor animation plays for one animation id of the replaced
  * character. Animation ids are per character (the same number means a

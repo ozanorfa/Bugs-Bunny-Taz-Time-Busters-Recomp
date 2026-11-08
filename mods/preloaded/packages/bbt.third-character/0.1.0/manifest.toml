@@ -61,7 +61,7 @@ label = "65%"
 [[feature]]
 id = "p3"
 name = "Third player: the Transylvania enemy (Phase 4, in development)"
-description = "Developer test. In 2-player mode, every level with Taz gets a third character next to him: a copy of Taz drawn with the model, animations and textures of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ). Bugs and Taz stay themselves. A third controller (seat 3) drives it, read every frame through the same path netplay synchronizes; this needs a build with 5 controller seats and a 3-player game.toml (multitap on port 2). Its textures are at half vertical resolution. Do not combine with the TRCA01 feature or the swap test."
+description = "Developer test. In 2-player mode, every level with Taz gets a third character next to him: a copy of Taz drawn with the model, animations and textures of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ). Bugs and Taz stay themselves. A third controller (seat 3) drives it, read every frame through the same path netplay synchronizes; this needs a build with 5 controller seats and a 3-player game.toml (multitap on port 2). Its textures are at half vertical resolution. Character: Daffy Duck (the default; his model read from LEVEL1/RETRY.BZZ; he has no gameplay moves on the disc, so Bugs' animations are fitted to his skeleton when the game starts), or the enemy. It has its own health panel in the HUD. Do not combine with the TRCA01 feature or the swap test."
 group = "Third character (in development)"
 default_enabled = false
 
@@ -80,7 +80,7 @@ id = "bbt.third-character.p3-hud"
 [[option]]
 feature = "p3"
 id = "size"
-label = "Size"
+label = "Size (the enemy; Daffy keeps his own)"
 type = "choice"
 default = "75"
 
@@ -99,6 +99,21 @@ label = "75% (about Bugs' height)"
 [[option.choice]]
 value = "65"
 label = "65%"
+
+[[option]]
+feature = "p3"
+id = "character"
+label = "Character"
+type = "choice"
+default = "daffy"
+
+[[option.choice]]
+value = "enemy"
+label = "The Transylvania enemy"
+
+[[option.choice]]
+value = "daffy"
+label = "Daffy Duck (in development: his model from LEVEL1/RETRY.BZZ, moving with Bugs' animations)"
 
 # The third actor's Actor_Update hook goes through bbt.shared
 # (src/mods/actor_update_hub.h).

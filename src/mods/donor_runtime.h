@@ -31,6 +31,11 @@ const BbtDonorRuntime* bbt_donor_runtime(void);
  * counters (psx_mod_counter_add keeps the name pointer: literals only). */
 int bbt_donor_runtime_load(void);
 
+/* Daffy Duck (daffy_profile.h, LEVEL1/RETRY.BZZ), loaded the same way for
+ * the third actor's "Daffy" choice (Phase 5). */
+const BbtDonorRuntime* bbt_daffy_runtime(void);
+int bbt_daffy_runtime_load(void);
+
 /* Upload w*h 16-bit pixels to VRAM (x, y) through the PsyQ LoadImage path
  * (psx_mod_psyq_load_image), staged in guest RAM below the stack pointer
  * `sp` (unused at that moment; the staged words are restored afterwards).

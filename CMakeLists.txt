@@ -76,6 +76,8 @@ target_sources(psx-runtime PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/actor_update_hub.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/third_actor.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/third_hud.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/retarget.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/daffy_moves.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/clone_res.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/donor_runtime.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/bouze.c")

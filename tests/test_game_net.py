@@ -45,6 +45,7 @@ presses below miss (NOTES.md "LAN netplay with our mods").
 Logs go to build-tests/out/net-*/peer<slot>/game.log."""
 from __future__ import annotations
 
+import hashlib
 import random
 import statistics
 import struct
@@ -65,6 +66,8 @@ Q = "bbt.quick-start."
 TRCA01 = {"trca01": True}
 QUICK = {"trca01": True, "bbt.quick-start/quick-start": True}
 V = "bbt.own-view.two-views."
+# The enemy, not the default Daffy: these tests check what was verified with it.
+ENEMY = {"enabled": True, "values": {"character": "enemy"}}
 A3 = "bbt.third-character.p3-actor."
 OWN = {"bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True}
 SMALL_GL = {"PSX_GL_MAX_DIM": "2048", "PSX_GL_HIRES_WINDOW": "0", "SDL_AUDIODRIVER": "dummy"}
@@ -238,10 +241,29 @@ class NetplayWithMods(unittest.TestCase):
         self.assertGreater(last, loaded_at + 100, "no digests after the level load")
 
     def test_5_three_peers_with_the_third_character(self):
+        self.three_peers("net-three-peers", {"p3": ENEMY, "bbt.quick-start/quick-start": True})
+
+    def test_5b_three_peers_with_daffy(self):
+        """Daffy's moves are built on each peer from the disc (integer math,
+        retarget.c): the same image everywhere, and the digests agree."""
+        def same_daffy(m):
+            images = []
+            for pe in m.peers:
+                show = pe.client.mod_cmd("bbt.p3actor", "show")
+                cs = pe.client.counters()
+                self.assertGreaterEqual(cs.get(A3 + "daffy_moves", 0), 40, f"peer {pe.slot}")
+                img, size = int(show["image"], 16), show["image_size"]
+                data = b"".join(pe.client.read(img + o, min(0x4000, size - o)) for o in range(0, size, 0x4000))
+                images.append(hashlib.sha256(data).hexdigest())
+            self.assertEqual(len(set(images)), 1, f"the peers built different Daffy images {images}")
+        self.three_peers("net-three-daffy",
+                         {"p3": {"enabled": True, "values": {"character": "daffy"}},
+                          "bbt.quick-start/quick-start": True}, same_daffy)
+
+    def three_peers(self, name: str, three: dict, check=None):
         build = need_build()
-        three = {"p3": True, "bbt.quick-start/quick-start": True}
         toml = three_player_toml(config.game_toml(), config.out_dir() / "game_3p_net.toml")
-        with NetMatch(build, "net-three-peers", [three, three, three], toml=toml) as m:
+        with NetMatch(build, name, [three, three, three], toml=toml) as m:
             host, _, third = m.peers
             c, p = host.client, Player(_Run(host.client))
             self.assertTrue(c.wait_until(lambda: p.level() == 2, 6000, 2), "no language screen")
@@ -282,6 +304,8 @@ class NetplayWithMods(unittest.TestCase):
                     self.assertEqual(pe.status()["players"], 3)
                     self.assertEqual(pe.status()["desync"], 0)
                     self.assertEqual(cs.get(A3 + "spawned"), 1)
+            if check:
+                check(m)
         compared, bad = m.compare_digests()
         last = max(set.intersection(*(set(pe.digests()) for pe in m.peers)), default=0)
         print(f"\n    {compared} ticks compared up to {last}, Granwich at ~{loaded_at}", file=sys.stderr)
@@ -290,7 +314,7 @@ class NetplayWithMods(unittest.TestCase):
 
     def test_6_three_peers_each_see_their_own_view(self):
         build = need_build()
-        feats = {"p3": True, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True}
+        feats = {"p3": ENEMY, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True}
         toml = three_player_toml(config.game_toml(), config.out_dir() / "game_3p_net_own.toml")
         with NetMatch(build, "net-three-own-views", [feats] * 3, toml=toml, window=True,
                       env=SMALL_GL) as m:
