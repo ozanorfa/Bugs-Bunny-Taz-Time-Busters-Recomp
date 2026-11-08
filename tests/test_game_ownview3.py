@@ -15,7 +15,10 @@ updated, not drawn) without touching Taz or the lives, until Bugs and Taz
 are both down and the team respawns, a life lost; then it is back next to
 Taz with full health (NOTES.md "The third player's death"). A death is
 started by a hit put in RAM (+0x66 damage 6, +0x24 bit 0x40000000, one of
-Actor_Update's hit conditions). The two plugins that need Actor_Update share one override
+Actor_Update's hit conditions). Enemies go for the third player too: in
+TRCA01 a Transylvania enemy (model 635) ignores it while the codes 4-7 rule
+is switched off (debug command "ref-third off") and chases and hits it once
+it is on (NOTES.md "Pick-ups and enemies for the third player"). The two plugins that need Actor_Update share one override
 (bbt.shared/actor-update, activated implicitly). Screenshots go to
 build-tests/out/ownview3/."""
 from __future__ import annotations
@@ -29,10 +32,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
 from bbt.client import pad  # noqa: E402
-from bbt.game import LEVEL_GRANNY, three_player_toml  # noqa: E402
+from bbt.game import LEVEL_GRANNY, LEVEL_TRCA01, three_player_toml  # noqa: E402
 from test_game_stock import moved, start_run  # noqa: E402
 
 V = "bbt.own-view.two-views."
+A3 = "bbt.third-character.p3-actor."
 VIEW_COUNT, FOLLOWED = 0x8008DE00, 0x80093C58
 CAM_RECORD, CAM_RECORD_BYTES = 0x800964C4, 0x2C0
 CAM_FOLLOW_ONE, CAM_FRAME_BOTH = 0x80, 0x100
@@ -43,6 +47,7 @@ SOUND_SLOTS, SOUND_SLOT_BYTES, SOUND_SLOT_COUNT = 0x80093274, 0x1C, 24
 SOUND_MASTER, SOUND_RANGE = 0x8008DBD4, 0x1000
 HERO_DOWN, LIVES = 0x800100A2, 0x800100A0  # 0x10 / 0x20 Bugs / Taz died, 1 / 2 out; lives
 DEATH, CLIP_PASVISIBLE, FULL_HEALTH = 0x2000000, 0x20, 6
+TRCA01_ENEMY_MODEL = 635
 
 
 def camera(c, view: int):
@@ -80,14 +85,46 @@ def hit(c, actor: int, damage: int = 6) -> None:
 
 
 def listed(c) -> list[int]:
-    """View 0's update / draw list (0x800970FC[0], 0-terminated)."""
-    lst, out = c.u32(0x800970FC), []
-    for i in range(64):
-        a = c.u32(lst + 4 * i)
-        if a == 0:
-            break
+    """View 0's update / draw list (0x800970FC[0], 0-terminated). The actor
+    pass starts a list by writing 0, so a read can land on an empty one:
+    read again (player 1 heads every non-empty list)."""
+    for _ in range(10):
+        lst, out = c.u32(0x800970FC), []
+        for i in range(64):
+            a = c.u32(lst + 4 * i)
+            if a == 0:
+                break
+            out.append(a)
+        if out:
+            return out
+        c.wait_frames(1)
+    return []
+
+
+def placed(c) -> list[int]:
+    """The placed-actor list (0x8008DDCC, +0 next)."""
+    out, a = [], c.u32(0x8008DDCC)
+    while 0x80000000 <= a < 0x80200000 and len(out) < 600:
         out.append(a)
+        a = c.u32(a)
     return out
+
+
+def model_id(c, actor: int) -> int | None:
+    """Resource id of an actor's model: the first node of its list +0x98 ({next, ?, entry}), entry +6."""
+    node = c.u32(actor + 0x98)
+    if not 0x80000000 <= node < 0x80200000:
+        return None
+    entry = c.u32(node + 8)
+    return c.u16(entry + 6) if 0x80000000 <= entry < 0x80200000 else None
+
+
+def teleport(c, actor: int, pos) -> None:
+    x, y, z = pos
+    c.write_u32(actor + 0xFC, (x & 0xFFFF) | ((y & 0xFFFF) << 16))
+    w = c.u32(actor + 0x100)
+    c.write_u32(actor + 0x100, (w & 0xFFFF0000) | (z & 0xFFFF))
+    c.write_u32(actor + 0x70, 0)
 
 
 def flat(a, b) -> int:
@@ -197,7 +234,9 @@ class ThreeViews(unittest.TestCase):
             heard |= sound_volumes(c, clone)
         master = c.u8(SOUND_MASTER)
         self.assertTrue(heard, "no sound of the third actor seen")
-        self.assertEqual(heard, {(master, master)}, f"volumes {sorted(heard)}, master {master}")
+        # the master byte moves by a step over time (seen: 127 / 128)
+        self.assertTrue(all(l == r and abs(l - master) <= 2 for l, r in heard),
+                        f"volumes {sorted(heard)}, master {master}")
         self.assertGreater(c.counters().get(V + "sound_player_3", 0), 0)
 
     def test_5_the_third_player_dies_on_its_own(self):
@@ -242,6 +281,62 @@ class ThreeViews(unittest.TestCase):
         self.seat2(pad("up")); c.wait_frames(40); self.seat2(None); c.wait_frames(10)
         self.assertGreater(moved(x0, p.pos(clone)), 32, "seat 2 does not move the third actor again")
         self.game.shot("6_back")
+        self.reached.add("third back")
+
+
+
+class EnemiesSeeTheThirdPlayer(unittest.TestCase):
+    """A run of its own: TRCA01 straight after Granwich, nobody out."""
+
+    @classmethod
+    def setUpClass(cls):
+        toml = config.out_dir() / "game_3p_ownview3_enemy.toml"
+        three_player_toml(config.game_toml(), toml)
+        start_run(cls, config.p3_build(), "ownview3_enemy",
+                  {"p3": True, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True},
+                  toml=toml)
+
+    def clone(self) -> int:
+        return self.c.u32(int(self.c.mod_cmd("bbt.p3actor", "show")["state"], 16) + 4)
+
+    def test_1_an_enemy_goes_for_the_third_player(self):
+        c, p = self.c, self.p
+        self.assertTrue(c.wait_until(lambda: p.level() == 2, 3000, 2), "no language screen")
+        c.wait_frames(200)
+        self.assertTrue(p.language_to_title(), "no title")
+        c.wait_frames(240); c.press(pad("start")); c.wait_frames(120)
+        c.press(pad("cross")); c.wait_frames(60); c.release(port=2); c.wait_frames(30)
+        c.press(pad("down")); c.wait_frames(30); c.press(pad("cross")); c.wait_frames(150)
+        c.press(pad("cross"))
+        self.assertTrue(c.wait_until(lambda: p.level() == LEVEL_GRANNY and p.players_ready(), 3000, 2))
+        for _ in range(10):                               # the opening dialogs
+            c.press(pad("cross")); c.wait_frames(150)
+        self.assertTrue(p.jump_to_level(LEVEL_TRCA01, (A3 + "spawned",)), "TRCA01 did not load")
+        self.assertTrue(c.wait_until(lambda: c.u8(VIEW_COUNT) == 3, 600, 5), "no third view in TRCA01")
+        for _ in range(6):
+            c.press(pad("cross")); c.wait_frames(120)
+        clone = self.clone()
+        enemies = [a for a in placed(c) if model_id(c, a) == TRCA01_ENEMY_MODEL]
+        self.assertEqual(len(enemies), 3, "the three Transylvania enemies")
+        enemy = min(enemies, key=lambda a: c.u16(a + 0x34))     # identity 249, by the level's centre
+        ep = p.pos(enemy)
+        c.write_u32(clone + 0x3C, (c.u32(clone + 0x3C) & 0xFFFF0000) | FULL_HEALTH)
+        try:
+            c.mod_cmd("bbt.p3actor", "ref-third off")
+            teleport(c, clone, (ep[0] + 500, ep[1] - 40, ep[2]))
+            c.wait_frames(300)
+            self.assertLess(dist(ep, p.pos(enemy)), 50, "the enemy moved while the rule was off")
+            self.assertEqual(c.s16(clone + 0x3C), FULL_HEALTH)
+            k0 = c.counters().get(A3 + "ref_third", 0)
+            c.mod_cmd("bbt.p3actor", "ref-third on")
+            self.assertTrue(c.wait_until(lambda: c.s16(clone + 0x3C) < FULL_HEALTH, 900, 10),
+                            "the enemy did not hit the third player")
+            # it closes from 500 to ~400, then lunges (measured: ~140 units moved at the first hit)
+            self.assertGreater(dist(ep, p.pos(enemy)), 50, "the enemy did not come for the third player")
+            self.assertGreater(c.counters().get(A3 + "ref_third", 0), k0)
+        finally:
+            c.mod_cmd("bbt.p3actor", "ref-third on")
+        self.game.shot("1_enemy")
 
 
 if __name__ == "__main__":

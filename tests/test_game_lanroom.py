@@ -77,8 +77,18 @@ class LanRoom(unittest.TestCase):
         self.repo_toml = config.game_toml().read_bytes()
         self.toml = game_toml_copy(config.game_toml(), self.out / "game.toml")
         self.procs = []
+        # macOS: the launchers' hidden windows stop advancing while the
+        # display sleeps (seen: the script never ran, no screenshot). -u wakes
+        # a sleeping display (user activity), -d keeps it on for the test.
+        self.awake = None
+        if sys.platform == "darwin" and shutil.which("caffeinate"):
+            self.awake = subprocess.Popen(["caffeinate", "-u", "-d", "-i", "-w", str(os.getpid())])
+            time.sleep(2)
 
     def tearDown(self):
+        if getattr(self, "awake", None) and self.awake.poll() is None:
+            self.awake.terminate()
+            self.awake = None
         for p, c, log in self.procs:
             try:
                 if p.poll() is None:

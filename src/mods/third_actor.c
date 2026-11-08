@@ -59,7 +59,12 @@
  * Host-side, only what is a pure function of the disc: the prepared donor
  * image and the texture plan.
  *
- * Tests: {"cmd":"mod_cmd","name":"bbt.p3actor","args":"show"|"group <n>"},
+ * Enemies: scripts that ask for the nearer / farther hero (FUN_80029424
+ * codes 4-7) also consider the clone (player_ref_wrap).
+ *
+ * Tests: {"cmd":"mod_cmd","name":"bbt.p3actor","args":"show"|"group <n>"|
+ * "ref-third off"|"ref-third on"} (the last two switch the codes 4-7 rule,
+ * for an A/B in tests only),
  * counters bbt.third-character.p3-actor.*, tests/test_game_p3_actor.py.
  */
 #include <stdint.h>
@@ -154,6 +159,7 @@
 #define ST_NO_INPUT  0x30u    /* 1 while the clone's update runs without input (dead) */
 #define ST_OUT       0x34u    /* 1 while the third player is out (kept across level loads) */
 #define ST_TEAM_DOWN 0x38u    /* 1 while Bugs and Taz are both down */
+#define ST_REF_OFF   0x3Cu    /* tests only (debug command "ref-third off"): scripts never pick the clone */
 #define STATE_MAGIC  0x33544242u
 
 
@@ -611,6 +617,58 @@ static void watch_team(uint32_t a)
     }
 }
 
+/* FUN_80029424(code, actor, ...): the actor a script means by a reference
+ * code (Ghidra). Codes 8/9 and 0xE/0xF are players 1/2, 2/3 Bugs/Taz (unless
+ * out), 4/6 the nearer and 5/7 the farther of the two heroes from the caller
+ * (3D distance FUN_80029304 for 4/5, horizontal FUN_80029398 for 6/7), 0xA a
+ * remembered hero; while a hero is out they give player 1. Enemies pick
+ * their target with codes 4/6 (measured in TRCA01: the three model-635
+ * enemies, ~1,200 calls of code 4 and 600 of code 6 in 1,200 frames), so
+ * they never went for the third actor: one placed 500 units from an enemy
+ * was ignored, Taz in the same place was chased and hit (NOTES.md "Pick-ups
+ * and enemies for the third player"). Here the third actor takes part in
+ * codes 4-7 while it is in play: the original answers, then the clone wins
+ * if it is nearer (4, 6) / farther (5, 7) by the same distance. Guest state
+ * only, the same on every peer. */
+#define ADDR_PLAYER_REF  0x80029424u
+/* addiu sp,sp,-0x48 / sw s2,0x38(sp) / move s2,a0 / lui v0,0xE000 */
+static const uint32_t kPlayerRefGuard[4] = {0x27BDFFB8u, 0xAFB20038u, 0x00809021u, 0x3C02E000u};
+
+/* Squared distance between two actors' positions (+0xFC, s16 x y z); the
+ * game compares square roots of the same sums, integer only here. */
+static int64_t ref_distance2(uint32_t a, uint32_t b, int horizontal)
+{
+    const int64_t dx = (int16_t)psx_mod_read_half(a + A_POS) - (int16_t)psx_mod_read_half(b + A_POS);
+    const int64_t dy = (int16_t)psx_mod_read_half(a + A_POS + 2) - (int16_t)psx_mod_read_half(b + A_POS + 2);
+    const int64_t dz = (int16_t)psx_mod_read_half(a + A_POS + 4) - (int16_t)psx_mod_read_half(b + A_POS + 4);
+    return dx * dx + dz * dz + (horizontal ? 0 : dy * dy);
+}
+
+static int player_ref_wrap(CPUState* cpu)
+{
+    const uint32_t code = cpu->gpr[4];
+    if (code < 4u || code > 7u || !g_active || !g_block || g_prepared != 1 || st_get(ST_MAGIC) != STATE_MAGIC)
+        return 0;
+    /* the clone the actor pass keeps up to date (it drops a stale one) */
+    const uint32_t third = st_get(ST_ACTOR);
+    if (!in_main_ram(third) || st_get(ST_OUT) || st_get(ST_REF_OFF) ||
+        (psx_mod_read_word(third + A_ACTION) & DEATH_FLAG))
+        return 0;
+    const uint32_t caller = cpu->gpr[5];
+    func_override_call_original(cpu);
+    const uint32_t chosen = cpu->gpr[2];
+    if (!in_main_ram(caller) || !in_main_ram(chosen) || chosen == third)
+        return 1;
+    const int horizontal = code >= 6u;
+    const int64_t d_third = ref_distance2(caller, third, horizontal);
+    const int64_t d_chosen = ref_distance2(caller, chosen, horizontal);
+    if ((code & 1u) == 0 ? d_third < d_chosen : d_third > d_chosen) {
+        cpu->gpr[2] = third;
+        count("ref_third", 1);
+    }
+    return 1;
+}
+
 int bbt_p3_out(void)
 {
     return bbt_p3_actor() && st_get(ST_OUT) != 0;
@@ -771,6 +829,11 @@ static void session_reset(void)
  * read_ram). */
 static int p3actor_command(const char* args, char* reply, int cap)
 {
+    if (args && strncmp(args, "ref-third ", 10) == 0 && g_block) {
+        st_set(ST_REF_OFF, strcmp(args + 10, "off") == 0 ? 1u : 0u);
+        snprintf(reply, (size_t)cap, "{\"ok\":true,\"ref_third\":%s}", st_get(ST_REF_OFF) ? "false" : "true");
+        return 1;
+    }
     if (args && strncmp(args, "group ", 6) == 0) {
         const int g = atoi(args + 6);
         if (g_prepared != 1 || !g_tex_planned || g < 0 || g >= RT->tex.clut_count) {
@@ -811,6 +874,9 @@ PSX_MOD_CONSTRUCTOR(register_bbt_third_actor)
     (void)psx_mod_register_function_override(
         PLUGIN_ACTOR ":death-done", ADDR_DEATH_DONE,
         death_done_wrap, kDeathDoneGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(
+        PLUGIN_ACTOR ":player-ref", ADDR_PLAYER_REF,
+        player_ref_wrap, kPlayerRefGuard, 4, FO_CREDIT_SELF);
     (void)psx_mod_register_session_reset_plugin(PLUGIN_ACTOR, session_reset);
     (void)psx_mod_register_command("bbt.p3actor", p3actor_command);
 }

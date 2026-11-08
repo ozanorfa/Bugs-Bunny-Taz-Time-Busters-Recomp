@@ -94,7 +94,10 @@ run against `build-release`, which holds your own mod selection
   farther than 0x1000 from Bugs' and Taz's cameras. Its death (a hit put in
   RAM) leaves Taz and the lives alone and takes it out (not listed); after
   Bugs and Taz both go down and the team respawns (a life lost) it is back
-  next to Taz with full health and moves again.
+  next to Taz with full health and moves again. A second run
+  (EnemiesSeeTheThirdPlayer) jumps to TRCA01: a Transylvania enemy (model
+  635) ignores the third player while the codes 4-7 rule is off (debug
+  command `ref-third off`) and chases and hits it once it is on.
 - `test_game_net.py` — netplay with our mods (`build-net`): two headless
   peers on 127.0.0.1 in a rollback match (`--netplay`, `PSX_NET_MODE=rollback`),
   each from a folder of its own under `build-tests/out/net-*/` (a link to
@@ -120,7 +123,9 @@ run against `build-release`, which holds your own mod selection
   both, so no digest check): Taz is player 1, the guest draws Taz (view 0)
   and the host, whose Bugs is out, his teammate Taz (`local_view_teammate`).
   About 4.5 min in all.
-- `test_game_lanroom.py` — a LAN room through the real launcher (`build-net`):
+- `test_game_lanroom.py` — a LAN room through the real launcher (`build-net`;
+  on macOS it keeps the display awake with `caffeinate`, the launchers stall
+  while it sleeps):
   two launchers driven by recomp-ui's script hook (`LNG_SCRIPT`, hidden
   windows), host Host Lobby -> Create Lobby, guest Join Direct
   127.0.0.1:7777, host PLAY. The host selected the Phase 3 mod and Quick
