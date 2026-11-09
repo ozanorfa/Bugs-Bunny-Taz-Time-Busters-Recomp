@@ -60,6 +60,22 @@ class Defaults(unittest.TestCase):
         self.assertEqual(k.get(V + "views_set", 0) + k.get(V + "views_3", 0), 0)
         self.game.shot("1_granwich")
 
+    def test_2_no_hook_lost_its_guard(self):
+        """Every function override of ours declines (and the original runs)
+        when the 4 guard words at its address do not match: after a framework
+        update or a regenerate that is a hook that silently stopped working.
+        The `func_override` debug command counts those declines (the
+        Fighting Force session's check, 2026-11-09). Our hooks are in the
+        main executable, so a miss is never legitimate here."""
+        overrides = self.c.send({"cmd": "func_override"}).get("overrides", [])
+        ours = [o for o in overrides if o["id"].startswith("bbt.")]
+        print("\n    " + "\n    ".join(f"{o['id']:<44} {o['addr']} calls {o['calls']:>7} misses {o['guard_misses']}"
+                                       for o in ours), file=sys.stderr)
+        self.assertGreater(len(ours), 10, f"our overrides are not armed: {[o['id'] for o in overrides]}")
+        self.assertEqual([o["id"] for o in ours if o["guard_misses"]], [], "a hook's guard words no longer match")
+        unreached = [o["id"] for o in ours if not o["calls"]]
+        self.assertNotIn("bbt.quick-start:menus", unreached, "the menu hook was never reached")
+
 
 class _Run:
     def __init__(self, client):

@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
 from bbt.client import pad  # noqa: E402
 from bbt.game import LEVEL_GRANNY, Player, three_player_toml  # noqa: E402
-from bbt.net import NetMatch  # noqa: E402
+from bbt.net import NetMatch, section_table  # noqa: E402
 
 FEATS = {"p3": True, "bbt.own-view/two-views": True, "bbt.quick-start/quick-start": True}
 SMALL_GL = {"PSX_GL_MAX_DIM": "2048", "PSX_GL_HIRES_WINDOW": "0", "SDL_AUDIODRIVER": "dummy"}
@@ -68,7 +68,16 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--lag", type=int, default=0)
     ap.add_argument("--jitter", type=int, default=0)
     ap.add_argument("--loss", type=int, default=0)
+    # To split a digest difference by feature (BUGS #48): Quick start's CD
+    # speed (1 = authentic, no psx_mod_set_disc_speed), and the own view off.
+    ap.add_argument("--cd-speed", type=int, default=0, help="Quick start cd_speed (default: the manifest's)")
+    ap.add_argument("--no-own-view", action="store_true")
     a = ap.parse_args(argv)
+    feats = dict(FEATS)
+    if a.cd_speed:
+        feats["bbt.quick-start/quick-start"] = {"enabled": True, "values": {"cd_speed": str(a.cd_speed)}}
+    if a.no_own_view:
+        feats["bbt.own-view/two-views"] = False
     minutes = a.minutes
     out = config.out_dir() / "soak_net"
     out.mkdir(parents=True, exist_ok=True)
@@ -79,9 +88,10 @@ def main(argv: list[str]) -> int:
         env.update(RNET_SIM_LATENCY_MS=str(a.lag), RNET_SIM_JITTER_MS=str(a.jitter), RNET_SIM_SEED="8112026")
     if a.loss:
         env["RNET_SIM_LOSS_PCT"] = str(a.loss)
-    report = {"minutes": minutes, "lag_ms": a.lag, "jitter_ms": a.jitter, "loss_pct": a.loss, "checks": []}
+    report = {"minutes": minutes, "lag_ms": a.lag, "jitter_ms": a.jitter, "loss_pct": a.loss,
+              "cd_speed": a.cd_speed or "default", "own_view": not a.no_own_view, "checks": []}
     awake = keep_awake()
-    with NetMatch(config.net_build(), "soak_net/match", [FEATS] * 3, toml=toml, window=True,
+    with NetMatch(config.net_build(), "soak_net/match", [feats] * 3, toml=toml, window=True,
                   env=env) as m:
         host = m.peers[0]
         c, p = host.client, Player(_Run(host.client))
@@ -122,14 +132,15 @@ def main(argv: list[str]) -> int:
             (out / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     compared, bad = m.compare_digests()
     report.update(compared=compared, digest_mismatches=bad[:20], loaded_at=loaded_at,
-                  rollbacks=[rollbacks(pe.log_path) for pe in m.peers])
+                  rollbacks=[rollbacks(pe.log_path) for pe in m.peers],
+                  differing=section_table([pe.log_path for pe in m.peers], bad))
     if awake:
         awake.terminate()
     (out / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     problems = [pr for row in report["checks"] for pr in row["peers"]
-                if pr["desync"] or pr["watchdog"] or pr["other_views"]]
+                if pr["desync"] or pr["watchdog"] or (pr["other_views"] and not a.no_own_view)]
     print(f"\n{compared} ticks compared, {len(bad)} differ; {len(problems)} peer problems; "
-          f"rollbacks per peer {report['rollbacks']}", flush=True)
+          f"rollbacks per peer {report['rollbacks']}; differing {report['differing']}", flush=True)
     return 1 if bad or problems else 0
 
 

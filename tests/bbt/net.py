@@ -51,6 +51,46 @@ def free_tcp_port() -> int:
         return s.getsockname()[1]
 
 
+SECTIONS = re.compile(r"rb live dig \S+ sim=(\d+) (.*)")
+
+
+def section_digests(log: Path) -> dict[int, dict[str, str]]:
+    """sim tick -> every section of its "rb live dig" line (core, cpu, clk,
+    tim, ram, dirty, mod, av, cd, spu, mdec, aux), same rollback rule as
+    digests()."""
+    out: dict[int, dict[str, str]] = {}
+    if log.is_file():
+        for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = SECTIONS.search(line)
+            if m:
+                out[int(m.group(1))] = dict(kv.split("=", 1) for kv in m.group(2).split() if "=" in kv)
+                continue
+            r = ROLLBACK.search(line)
+            if r:
+                load = int(r.group(1))
+                for tick in [t for t in out if t >= load]:
+                    del out[tick]
+    return out
+
+
+def section_table(logs: list[Path], ticks: list[int]) -> dict:
+    """For the given ticks: how often each section differs, and how often
+    each peer is the odd one out (its core differs from all the others)."""
+    per = [section_digests(lg) for lg in logs]
+    sections: dict[str, int] = {}
+    odd: dict[int, int] = {}
+    for t in ticks:
+        rows = [d.get(t, {}) for d in per]
+        for k in rows[0]:
+            if len({r.get(k) for r in rows}) > 1:
+                sections[k] = sections.get(k, 0) + 1
+        cores = [r.get("core") for r in rows]
+        for i, v in enumerate(cores):
+            if cores.count(v) == 1:
+                odd[i] = odd.get(i, 0) + 1
+    return {"sections": sections, "odd_peer": odd}
+
+
 def digests(log: Path) -> dict[int, tuple[str, str, str, str]]:
     """sim tick -> (core, ram, mod, av) digests a peer logged for ticks that
     stayed final (see ROLLBACK)."""

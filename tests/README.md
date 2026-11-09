@@ -135,7 +135,11 @@ run against `build-release`, which holds your own mod selection
   the third player does not appear without a controller for seat 3, and
   one PC keeps the game's shared screen. `OfflineJoin`: with Player 3 set
   to the keyboard but no key pressed there is no Daffy; after a Player 3
-  key press he comes at the next level start.
+  key press he comes at the next level start. `Defaults` test_2: every
+  `bbt.*` function override is armed and none counted a guard miss
+  (`func_override` debug command): after a framework update or a
+  regenerate, a hook whose guard words no longer match silently stops
+  working, and this test names it.
 - `test_game_net.py` — netplay with our mods (`build-net`): two headless
   peers on 127.0.0.1 in a rollback match (`--netplay`, `PSX_NET_MODE=rollback`),
   each from a folder of its own under `build-tests/out/net-*/` (a link to
@@ -186,7 +190,11 @@ Long soaks, run by hand (not by `run_tests.py`):
   (rollback-aware: a digest from a tick that was later replayed is not
   compared). `--lag MS --jitter MS --loss PCT` run it over the framework's
   link simulator (`RNET_SIM_*`), so rollbacks really happen; the report
-  counts them. Report: `build-tests/out/soak_net/report.json`. On macOS
+  counts them; for the differing ticks the report also tabulates which
+  digest sections differ and which peer is the odd one out. `--cd-speed N`
+  sets Quick start's CD speed and `--no-own-view` turns the own view off,
+  to split a difference by feature (BUGS #48). Report:
+  `build-tests/out/soak_net/report.json`. On macOS
   both soaks keep the Mac awake (`caffeinate`).
 
 `test_game_lanroom.py` also has `test_three_pcs_in_one_room`: three
