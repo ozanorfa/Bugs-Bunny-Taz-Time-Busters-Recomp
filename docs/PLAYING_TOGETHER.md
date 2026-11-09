@@ -38,9 +38,19 @@ player full screen with its own camera.
    downloading (the site is busy, for example "504"), run Setup.bat again
    later. If it stops otherwise: select all the text in its window, copy
    it and send it along.
-5. Start **Bugs Bunny and Taz** from the desktop. Your controller: on the
-   first screen, card **PLAYER 1**, choose it below the controller picture
-   (**Configure** changes the buttons).
+5. Start **Bugs Bunny and Taz** from the desktop (its icon is the game's
+   logo, which Setup takes from your disc by running the game hidden for a
+   minute). Your controller: on the first screen, card **PLAYER 1**,
+   choose it below the controller picture (scroll the card down;
+   **Configure** changes the buttons).
+   - **Two or three players on one PC:** choose a controller on the
+     **PLAYER 2** and **PLAYER 3** tabs too. Nothing is chosen for them by
+     itself, so with only Player 1 set up the game starts for one player
+     (Taz on the computer, no Daffy). A keyboard player needs their own
+     keys (Configure), or the keys move two players (BUGS #46). Then NEW
+     GAME -> TWO PLAYERS -> START GAME; Player 3 presses any button before
+     START GAME and Daffy comes too. Online this is not needed: every PC
+     uses its own PLAYER 1.
 6. For a match: the first time you host or join, Windows Defender Firewall
    asks about the game. Tick both **Private** and **Public** networks (a
    Radmin VPN network often counts as Public), then **Allow access**. If

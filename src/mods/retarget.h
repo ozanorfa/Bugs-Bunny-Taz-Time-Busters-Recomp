@@ -105,4 +105,14 @@ uint32_t rt_retarget(const RtRig* rig, const uint8_t* src, uint32_t src_size,
 uint32_t rt_still(const RtRig* rig, const uint8_t* src, uint32_t src_size, int src_frame,
                   const uint8_t header[8], uint16_t frames, uint8_t* out, uint32_t cap);
 
+/* Source frames `first` .. `first + count - 1` spread over the first
+ * `played` target frames, both ends included, then the last of them held
+ * for the remaining `frames - played` frames (empty frames: no pose change,
+ * no other commands). For a move the game cuts short: it is shown whole in
+ * the frames that really play. Returns the size or 0 (also for a range
+ * outside the source). */
+uint32_t rt_retarget_range(const RtRig* rig, const uint8_t* src, uint32_t src_size, int first,
+                           int count, const uint8_t header[8], uint16_t frames, uint16_t played,
+                           uint8_t* out, uint32_t cap);
+
 #endif /* BBT_RETARGET_H */

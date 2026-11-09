@@ -686,11 +686,37 @@ static int put_extras(Out* o, const RtRig* rig, const uint8_t* src, uint32_t siz
     return n;
 }
 
+/* The source frame shown at target frame f. Default (range == NULL): the
+ * whole source spread over all `frames` (floor, as every move has always
+ * been built). A range {first, count, played}: source frames first ..
+ * first + count - 1 spread over the first `played` target frames with both
+ * ends included (the last played frame shows the last source frame), and
+ * -1 (nothing written: the pose is held) after them. */
+typedef struct {
+    int first, count, played;
+} Range;
+
+static int source_frame(int f, int ns, int frames, const Range* range)
+{
+    if (!range)
+        return (int)((int64_t)f * ns / frames);
+    if (f >= range->played)
+        return -1;
+    if (range->played <= 1 || range->count <= 1)
+        return range->first;
+    return range->first +
+           (int)(((int64_t)f * (range->count - 1) + (range->played - 1) / 2) / (range->played - 1));
+}
+
 static uint32_t build(const RtRig* rig, const uint8_t* src, uint32_t src_size, int still_frame,
-                      const uint8_t header[8], uint16_t frames, uint8_t* out, uint32_t cap)
+                      const Range* range, const uint8_t header[8], uint16_t frames, uint8_t* out,
+                      uint32_t cap)
 {
     const int ns = blob_frames(src, src_size);
     if (ns <= 0 || frames == 0 || cap < 8u || rig->src_n <= 0)
+        return 0;
+    if (range && (range->first < 0 || range->count < 1 || range->first + range->count > ns ||
+                  range->played < 1))
         return 0;
     /* source states and frame offsets, frame by frame */
     RtState* sst = (RtState*)malloc(sizeof(RtState) * (size_t)ns * RT_MAX_NODES);
@@ -723,8 +749,9 @@ static uint32_t build(const RtRig* rig, const uint8_t* src, uint32_t src_size, i
         const uint32_t h = o.len;
         put(&o, 0); put(&o, 0); put(&o, (uint16_t)f); put(&o, 0);
         int count = 0;
-        if (still_frame < 0 || f == 0) {
-            int sf = still_frame >= 0 ? still_frame : (int)((int64_t)f * ns / frames);
+        const int sf_range = still_frame >= 0 ? still_frame : source_frame(f, ns, frames, range);
+        if ((still_frame < 0 || f == 0) && sf_range >= 0) {
+            int sf = sf_range;
             if (sf >= ns)
                 sf = ns - 1;
             RtState want[RT_MAX_NODES];
@@ -749,7 +776,7 @@ static uint32_t build(const RtRig* rig, const uint8_t* src, uint32_t src_size, i
 uint32_t rt_retarget(const RtRig* rig, const uint8_t* src, uint32_t src_size,
                      const uint8_t header[8], uint16_t frames, uint8_t* out, uint32_t cap)
 {
-    return build(rig, src, src_size, -1, header, frames, out, cap);
+    return build(rig, src, src_size, -1, NULL, header, frames, out, cap);
 }
 
 uint32_t rt_still(const RtRig* rig, const uint8_t* src, uint32_t src_size, int src_frame,
@@ -757,5 +784,13 @@ uint32_t rt_still(const RtRig* rig, const uint8_t* src, uint32_t src_size, int s
 {
     if (src_frame < 0)
         src_frame = 0;
-    return build(rig, src, src_size, src_frame, header, frames, out, cap);
+    return build(rig, src, src_size, src_frame, NULL, header, frames, out, cap);
+}
+
+uint32_t rt_retarget_range(const RtRig* rig, const uint8_t* src, uint32_t src_size, int first,
+                           int count, const uint8_t header[8], uint16_t frames, uint16_t played,
+                           uint8_t* out, uint32_t cap)
+{
+    const Range r = {first, count, played < frames ? (int)played : (int)frames};
+    return build(rig, src, src_size, -1, &r, header, frames, out, cap);
 }

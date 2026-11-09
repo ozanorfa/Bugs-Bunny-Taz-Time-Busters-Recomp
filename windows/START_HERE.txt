@@ -23,11 +23,18 @@ FIRST START (once)
 4. Wait. The first time it downloads the compiler and builds the whole
    game for your PC; that takes a while. It installs into
    C:\RecompDev\BugsBunnyTazRecomp and puts "Bugs Bunny and Taz" on your
-   desktop. If it stops while downloading (the site is busy, for example
-   "504"), run Setup.bat again later.
+   desktop, with the game's logo as its icon (Setup runs the game hidden
+   for a minute to take it from your disc). If it stops while downloading
+   (the site is busy, for example "504"), run Setup.bat again later.
 5. Start "Bugs Bunny and Taz" from the desktop. Your controller: on the
    first screen, card PLAYER 1, choose it below the controller picture
-   (Configure changes the buttons). Then PLAY.
+   (scroll the card down; Configure changes the buttons). Then PLAY.
+6. Two or three players on ONE PC: choose a controller on the PLAYER 2 and
+   PLAYER 3 tabs as well (nothing is chosen for them by itself; with only
+   one controller the game starts for one player). A keyboard player needs
+   their own keys (Configure), or the keys move two players. Then NEW GAME
+   - TWO PLAYERS - START GAME; Player 3 presses any button before START
+   GAME and Daffy comes too. (Online every PC uses its own PLAYER 1.)
 
 OUT OF THE BOX (nothing to set in Mods)
 - Quick start: the game opens on its main menu; in a match the players

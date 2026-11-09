@@ -54,12 +54,24 @@ static int spin_family(uint16_t sub)
 
 /* The spin is Taz's only attack: +0x20 ATTACK is set only while spin start
  * 0x0072 and the spin 0x004F play (measured, NOTES.md "Daffy's spin and
- * sounds"). Daffy attacks with Bugs' □ attack instead of Taz's tornado: the
- * spin start holds its first frame, the spin (and 0x0097, hidden like it)
- * plays it whole, at Taz's frame counts, so the game's timing and the hit
- * stay Taz's. Without root commands the game attaches no tornado. 0x0073
- * (the wobble after a held spin) keeps the still pose. */
+ * sounds"). Daffy attacks with Bugs' □ attack instead of Taz's tornado, at
+ * Taz's frame counts, so the game's timing and the hit stay Taz's. Without
+ * root commands the game attaches no tornado. 0x0073 (the wobble after a
+ * held spin) keeps the still pose.
+ *
+ * Measured on a □ tap and a held □ (2026-11-09, debug-server trace of
+ * +0x14C / +0x14A, scratchpad probe_kick.py): Bugs' attack plays its 7
+ * frames in ~19 game frames. Taz's spin start plays its 3 frames in ~12
+ * game frames. Then the game ends Taz's 24-frame spin after its frame 11
+ * (~16 game frames), tapped or held. Spread over all 24 frames, the kick
+ * was cut at its 4th frame, with the foot up, and Daffy snapped back to
+ * standing (user's play test: "the foot teleports up and back down"). So
+ * the kick is split by time, about 4 game frames per kick frame: its
+ * first KICK_START frames in the spin start, the rest over the SPIN_PLAYED
+ * frames that really play, then held (rt_retarget_range). */
 #define BUGS_ATTACK 0x003Au   /* Bugs' attack on □ (ATTACK while it plays, measured) */
+#define KICK_START  3         /* kick frames shown during spin start 0x0072 */
+#define SPIN_PLAYED 11        /* spin frames the game plays before it ends the spin */
 
 static int attack_role(uint16_t sub)
 {
@@ -129,12 +141,15 @@ int bbt_daffy_add_moves(Donor* daffy, DonorAnimMap* map, int cap, uint16_t hold_
             if (!attack || !attack_role(t->sub))
                 continue;
             rig->no_root = 1;
+            const int kick = (int)attack->frames;
+            const int start = kick > KICK_START ? KICK_START : (kick > 1 ? kick - 1 : 1);
             const uint32_t len =
                 t->sub == 0x0072u
-                    ? rt_still(rig, bugs.image + attack->off, attack->size, 0, taz.image + t->off,
-                               t->frames, buf, cap_bytes)
-                    : rt_retarget(rig, bugs.image + attack->off, attack->size, taz.image + t->off,
-                                  t->frames, buf, cap_bytes);
+                    ? rt_retarget_range(rig, bugs.image + attack->off, attack->size, 0, start,
+                                        taz.image + t->off, t->frames, t->frames, buf, cap_bytes)
+                    : rt_retarget_range(rig, bugs.image + attack->off, attack->size, start,
+                                        kick - start, taz.image + t->off, t->frames, SPIN_PLAYED,
+                                        buf, cap_bytes);
             rig->no_root = 0;
             if (!len || !donor_append_anim(daffy, t->sub, buf, len)) {
                 ++stats->failed;

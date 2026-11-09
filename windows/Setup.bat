@@ -107,7 +107,9 @@ if errorlevel 1 goto :failed
 if not exist "%DEST%\build-game\BugsBunnyTaz_Recompiled.exe" goto :failed
 
 rem ---- 5. a desktop shortcut (the launcher: play, settings, netplay room) ---
-powershell -NoProfile -Command "$w=New-Object -ComObject WScript.Shell; $l=$w.CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Bugs Bunny and Taz.lnk'); $l.TargetPath='%DEST%\windows\Play.bat'; $l.WorkingDirectory='%DEST%'; $l.IconLocation='%DEST%\build-game\BugsBunnyTaz_Recompiled.exe,0'; $l.Save()" >nul 2>nul
+set "ICON=%DEST%\build-game\BugsBunnyTaz_Recompiled.exe,0"
+if exist "%DEST%\BugsBunnyTaz.ico" set "ICON=%DEST%\BugsBunnyTaz.ico"
+powershell -NoProfile -Command "$w=New-Object -ComObject WScript.Shell; $l=$w.CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Bugs Bunny and Taz.lnk'); $l.TargetPath='%DEST%\windows\Play.bat'; $l.WorkingDirectory='%DEST%'; $l.IconLocation='%ICON%'; $l.Save()" >nul 2>nul
 
 echo.
 echo   Done. Start the game with "Bugs Bunny and Taz" on your desktop

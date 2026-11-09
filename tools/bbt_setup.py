@@ -14,6 +14,9 @@ its files in .bbt_files) or a git clone / pull from a bundle.
 3. Builds build-game with tools/bbt_build.py and your disc.
 4. Remembers the disc path in disc_source.txt (ignored by Git) for the next
    update.
+5. Makes the desktop icon from the game's own title screen
+   (tools/bbt_icon.py: BugsBunnyTaz.ico, once; a failure keeps the
+   default icon).
 
     python tools/bbt_setup.py --disc "PATH/your.cue" [--dry-run]
 
@@ -33,6 +36,8 @@ ROOT = Path(__file__).resolve().parent.parent
 MARKER = ROOT / "generated" / "SLUS_011.44_dispatch.c"
 KEY_FILE = ROOT / "generated" / ".bbt_gen_key"
 NOTE = ROOT / "disc_source.txt"
+ICON = ROOT / "BugsBunnyTaz.ico"    # made on this PC from the game's title screen (ignored by Git)
+EXE = ROOT / "build-game" / ("BugsBunnyTaz_Recompiled.exe" if os.name == "nt" else "BugsBunnyTaz_Recompiled")
 FILE_LIST = ROOT / ".bbt_files"     # the players' ZIP: every file it holds, one per line
 # Paths a change to which needs no new game C. Everything else in the source
 # (psxrecomp, game.toml, symbols, seeds, codegen_setup.*, ...) counts.
@@ -113,6 +118,13 @@ def main() -> int:
         sys.exit(f"build failed (exit {rc}); the output above says why")
     if MARKER.exists():
         KEY_FILE.write_text(key + "\n")
+    if not ICON.is_file() and EXE.is_file():
+        print("\nmaking the desktop icon from the game's title screen (the game runs hidden "
+              "for a minute) ...", flush=True)
+        subprocess.call([sys.executable, str(ROOT / "tools" / "bbt_icon.py"), "--exe", str(EXE),
+                         "--game", str(ROOT / "build-game" / "game_3p.toml"),
+                         "--disc", str(ROOT / "disc" / "BugsBunnyTaz_TimeBusters_USA.cue"),
+                         "--out", str(ICON)], cwd=ROOT)
     return 0
 
 

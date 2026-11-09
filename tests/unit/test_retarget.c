@@ -277,6 +277,57 @@ static void retarget_resamples_to_the_asked_length(void)
     free(rig);
 }
 
+/* rt_retarget_range: a cut-short move shown whole. Source frames 3..6 of a
+ * 9-frame move spread over the first 5 of 8 target frames: target frame k
+ * (1-based, as rt_simulate counts) shows source frame 3 + round((k-1)*3/4),
+ * the last played frame shows source frame 6, and the 3 frames after it
+ * hold it. A range outside the source is refused. */
+static void retarget_range_shows_a_cut_move_whole(void)
+{
+    static Blob s, r, m;
+    skeleton(&s);
+    rest(&r);
+    moving(&m, 9);
+    RtRig* rig = (RtRig*)malloc(sizeof *rig);
+    CHECK(rig && rt_rig_build(rig, s.b, s.len, r.b, r.len, s.b, s.len, r.b, r.len, kSelf, 5, 2, 2,
+                              kToes, kToes));
+    if (!rig)
+        return;
+    static uint8_t out[8192];
+    const uint8_t hdr[8] = {0x50, 0, 2, 0, 0, 0, 0, 0};
+    const uint32_t len = rt_retarget_range(rig, m.b, m.len, 3, 4, hdr, 8, 5, out, sizeof out);
+    CHECK(len > 8);
+    CHECK_EQ(out[4] | (out[5] << 8), 8);
+    static const int want_src[8] = {3, 4, 5, 5, 6, 6, 6, 6};   /* 0-based source frame per target frame */
+    RtState a[RT_MAX_NODES], b[RT_MAX_NODES];
+    for (int f = 0; f < 8; ++f) {
+        for (int i = 0; i < RT_MAX_NODES; ++i) {
+            memset(&a[i], 0, sizeof a[i]);
+            memset(&b[i], 0, sizeof b[i]);
+        }
+        CHECK(rt_simulate(m.b, m.len, want_src[f] + 1, a, 5));
+        CHECK(rt_simulate(out, len, f + 1, b, 5));
+        for (int n = 2; n <= 5; ++n) {
+            int32_t ma[9], mb[9];
+            rt_euler_to_matrix(a[n].rot, ma);
+            rt_euler_to_matrix(b[n].rot, mb);
+            CHECK(mat_diff(ma, mb) <= 80);
+        }
+    }
+    /* the held frames carry no commands */
+    uint32_t p = 8;
+    for (int f = 0; f < 8; ++f) {
+        const uint16_t hw = (uint16_t)(out[p] | (out[p + 1] << 8));
+        const uint16_t count = (uint16_t)(out[p + 2] | (out[p + 3] << 8));
+        if (f >= 5)
+            CHECK_EQ(count, 0);
+        p += 8 + 2u * (uint32_t)(hw - 2);
+    }
+    CHECK_EQ(p, len);
+    CHECK_EQ(rt_retarget_range(rig, m.b, m.len, 7, 4, hdr, 8, 5, out, sizeof out), 0u);
+    free(rig);
+}
+
 /* Root commands (0xA00) in a retargeted blob: walks every frame's commands
  * with the interpreter's argument counts (tools/bouze/keyframes.py). */
 static int test_nargs(uint16_t c)
@@ -358,5 +409,6 @@ const TestCase kRetargetTests[] = {
     {"align_turns_a_onto_b", align_turns_a_onto_b},
     {"retarget_onto_itself_keeps_the_rotations", retarget_onto_itself_keeps_the_rotations},
     {"retarget_resamples_to_the_asked_length", retarget_resamples_to_the_asked_length},
+    {"retarget_range_shows_a_cut_move_whole", retarget_range_shows_a_cut_move_whole},
 };
 const int kRetargetTestCount = (int)(sizeof(kRetargetTests) / sizeof(kRetargetTests[0]));
