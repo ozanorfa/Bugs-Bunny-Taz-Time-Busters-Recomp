@@ -326,9 +326,17 @@ static int in_main_ram(uint32_t a)
     return a >= 0x80000000u && a < 0x80200000u;
 }
 
+/* Option "offline" (default "shared"): on one PC the game keeps its own
+ * shared screen; "split" gives every player a band of it. In netplay every
+ * PC shows its own player either way. */
+static int g_offline_split;
+
 static const BbtActorUpdateHook kViewHook;
 static void two_views_activate(void)
 {
+    char v[16];
+    g_offline_split = psx_mod_option_value("bbt.own-view", "two-views", "offline", v, sizeof v) &&
+                      strcmp(v, "split") == 0;
     bbt_actor_update_hook(BBT_ACTOR_HOOK_VIEW, &kViewHook);
     if (!g_view_lists)
         g_view_lists = psx_mod_alloc_guest_memory((MAX_VIEWS - 1u) * LIST_BYTES, 16);
@@ -688,6 +696,8 @@ static void raise_view_count(void)
     const uint8_t now = psx_mod_read_byte(ADDR_VIEW_COUNT);
     if (now < 1 || now > MAX_VIEWS || !two_player_level())
         return;
+    if (!psx_netplay_active() && !g_offline_split)
+        return;                     /* one PC: the game's own shared screen */
     const uint32_t third = bbt_p3_actor();
     const uint8_t want = third ? 3u : 2u;
     /* the views' actors, as the frame loop sets them (it sets view 1's only

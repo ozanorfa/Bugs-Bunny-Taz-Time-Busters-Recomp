@@ -13,13 +13,14 @@ typedef struct BbtDaffyMoveStats {
     int without_source;   /* Taz ids Bugs lacks (they keep the still pose) */
     int failed;
     int hold;             /* the still pose was built */
+    int attack;           /* spin-family ids built from Bugs' attack (0x0072, 0x004F, 0x0097) */
     uint32_t bytes;
 } BbtDaffyMoveStats;
 
 /* Reads Bugs' and Taz's animations from the disc, appends to `daffy` one
- * animation per Taz id that Bugs also has (not the spin family) and the
- * still pose `hold_sub` (`hold_frames` frames), and writes the role map
- * (id -> id) to `map`. Emulation thread (disc read). Returns the map
+ * animation per Taz id that Bugs also has (Taz's spin start, spin and
+ * 0x0097 from Bugs' attack instead) and the still pose `hold_sub`
+ * (`hold_frames` frames), and writes the role map (id -> id) to `map`. Emulation thread (disc read). Returns the map
  * entries written, or -1 when the sources could not be read. */
 int bbt_daffy_add_moves(Donor* daffy, DonorAnimMap* map, int cap, uint16_t hold_sub,
                         uint16_t hold_frames, BbtDaffyMoveStats* stats);

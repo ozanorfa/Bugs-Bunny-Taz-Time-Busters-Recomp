@@ -7,7 +7,7 @@ id = "bbt.third-character"
 version = "0.1.0"
 name = "Third Character (in development)"
 author = "BugsBunnyTazRecomp project"
-description = "Work in progress: replaces Taz with another in-game character in 2-player mode."
+description = "Daffy Duck as a third player next to Bugs and Taz in 2-player mode, plus the older tests that turn Taz into another in-game character."
 resolver = "declarative"
 
 [[target]]
@@ -60,10 +60,10 @@ label = "65%"
 
 [[feature]]
 id = "p3"
-name = "Third player: the Transylvania enemy (Phase 4, in development)"
-description = "Developer test. In 2-player mode, every level with Taz gets a third character next to him: a copy of Taz drawn with the model, animations and textures of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ). Bugs and Taz stay themselves. A third controller (seat 3) drives it, read every frame through the same path netplay synchronizes; this needs a build with 5 controller seats and a 3-player game.toml (multitap on port 2). Its textures are at half vertical resolution. Character: Daffy Duck (the default; his model read from LEVEL1/RETRY.BZZ; he has no gameplay moves on the disc, so Bugs' animations are fitted to his skeleton when the game starts), or the enemy. It has its own health panel in the HUD. Do not combine with the TRCA01 feature or the swap test."
+name = "Third player: Daffy Duck"
+description = "In 2-player mode, every level with Taz gets a third hero next to him, played from seat 3: a third controller, or the third PC in a LAN room. Character: Daffy Duck (the default; his model is read from your own disc, LEVEL1/RETRY.BZZ, and Bugs' animations are fitted to his skeleton when the game starts) or the hunched enemy from the Transylvania level (LEVEL5/TRCA01.BZZ). He has his own health panel, and enemies go for him too. His textures are at half vertical resolution. Needs the 3-player configuration (5 controller seats, multitap on port 2). He appears only when there is a third player: in a LAN room when three are seated, on one PC when Player 3 has a controller in Settings -> Input. Do not combine with \"Taz becomes the Transylvania enemy\" or the swap test."
 group = "Third character (in development)"
-default_enabled = false
+default_enabled = true
 
 [[plugin]]
 feature = "p3"
@@ -113,7 +113,41 @@ label = "The Transylvania enemy"
 
 [[option.choice]]
 value = "daffy"
-label = "Daffy Duck (in development: his model from LEVEL1/RETRY.BZZ, moving with Bugs' animations)"
+label = "Daffy Duck (moves fitted from Bugs' animations)"
+
+[[option]]
+feature = "p3"
+id = "sounds"
+label = "Daffy's sounds"
+type = "choice"
+default = "bugs"
+
+[[option.choice]]
+value = "bugs"
+label = "Bugs' steps, jumps and attack"
+
+[[option.choice]]
+value = "taz"
+label = "Taz's (as Taz)"
+
+[[option.choice]]
+value = "quiet"
+label = "None of Taz's sounds"
+
+[[option]]
+feature = "p3"
+id = "appear"
+label = "Appears"
+type = "choice"
+default = "auto"
+
+[[option.choice]]
+value = "auto"
+label = "Only with a third player"
+
+[[option.choice]]
+value = "always"
+label = "Always (tests: seat 3 driven by the debug command)"
 
 # The third actor's Actor_Update hook goes through bbt.shared
 # (src/mods/actor_update_hub.h).

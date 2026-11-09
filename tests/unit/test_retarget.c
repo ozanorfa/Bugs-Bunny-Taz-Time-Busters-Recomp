@@ -277,7 +277,82 @@ static void retarget_resamples_to_the_asked_length(void)
     free(rig);
 }
 
+/* Root commands (0xA00) in a retargeted blob: walks every frame's commands
+ * with the interpreter's argument counts (tools/bouze/keyframes.py). */
+static int test_nargs(uint16_t c)
+{
+    const unsigned op = c & 0xF00u, fl = c & 0xF000u;
+    switch (op) {
+    case 0x400: case 0x700: return 4;
+    case 0x200: case 0x300: case 0xC00: return 1;
+    case 0x600: case 0xE00: return 2;
+    case 0x900: return (fl & 0x1000u) ? 4 : 7;
+    case 0x100: case 0xD00:
+        return ((fl & 0x2000u) ? 3 : 0) + ((fl & 0x4000u) ? 3 : 0) +
+               ((fl & 0x8000u) ? 3 : (fl & 0x1000u) ? 2 : 0);
+    case 0xB00:
+        return (((fl & 0x2000u) ? 3 : 0) + ((fl & 0x4000u) ? 3 : 0) + ((fl & 0x8000u) ? 3 : 0) + 1) >> 1;
+    default: return 0;
+    }
+}
+
+static int root_commands(const uint8_t* b, uint32_t len)
+{
+    const int frames = b[4] | (b[5] << 8);
+    uint32_t p = 8;
+    int roots = 0;
+    for (int f = 0; f < frames && p + 8u <= len; ++f) {
+        const unsigned count = (unsigned)(b[p + 2] | (b[p + 3] << 8));
+        uint32_t q = p + 8;
+        for (unsigned k = 0; k < count && q + 2u <= len; ++k) {
+            const uint16_t c = (uint16_t)(b[q] | (b[q + 1] << 8));
+            if ((c & 0xF00u) == 0xA00u)
+                ++roots;
+            q += 2u + 2u * (uint32_t)test_nargs(c);
+        }
+        p += 8u + 2u * (uint32_t)((b[p] | (b[p + 1] << 8)) - 2);
+    }
+    return roots;
+}
+
+static void retarget_can_drop_root_commands(void)
+{
+    static Blob s, r, m;
+    skeleton(&s);
+    rest(&r);
+    blob_begin(&m);
+    for (int f = 0; f < 4; ++f) {           /* poses plus a root command on node 5 */
+        frame_begin(&m);
+        pose(&m, 1, 0, 0, 0, 0, 0, 0);
+        pose(&m, 2, 0, (f * 40) & 4095, 0, 0, -100, 0);
+        pose(&m, 5, 0, 0, 0, 0, 100, 0);
+        cmd(&m, 0x0A05, NULL, 0);
+        frame_end(&m);
+    }
+    CHECK_EQ(root_commands(m.b, m.len), 4);
+    RtRig* rig = (RtRig*)malloc(sizeof *rig);
+    CHECK(rig && rt_rig_build(rig, s.b, s.len, r.b, r.len, s.b, s.len, r.b, r.len, kSelf, 5, 2, 2,
+                              kToes, kToes));
+    if (!rig)
+        return;
+    CHECK_EQ(rig->no_root, 0);
+    static uint8_t out[8192];
+    const uint8_t hdr[8] = {0x50, 0, 2, 0, 4, 0, 0, 0};
+    uint32_t len = rt_retarget(rig, m.b, m.len, hdr, 4, out, sizeof out);
+    CHECK(len > 8);
+    CHECK_EQ(root_commands(out, len), 4);   /* kept, node 5 -> 5 */
+    rig->no_root = 1;
+    len = rt_retarget(rig, m.b, m.len, hdr, 4, out, sizeof out);
+    CHECK(len > 8);
+    CHECK_EQ(root_commands(out, len), 0);
+    len = rt_still(rig, m.b, m.len, 0, hdr, 3, out, sizeof out);
+    CHECK(len > 8);
+    CHECK_EQ(root_commands(out, len), 0);
+    free(rig);
+}
+
 const TestCase kRetargetTests[] = {
+    {"retarget_can_drop_root_commands", retarget_can_drop_root_commands},
     {"euler_round_trip", euler_round_trip},
     {"euler_matches_rotmatrix_layout", euler_matches_rotmatrix_layout},
     {"align_turns_a_onto_b", align_turns_a_onto_b},

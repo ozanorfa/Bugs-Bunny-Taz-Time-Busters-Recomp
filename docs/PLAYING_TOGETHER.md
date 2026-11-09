@@ -18,26 +18,32 @@ player full screen with its own camera.
   one network). Use the host's Radmin IP below. On a home LAN use the
   host's LAN IP.
 
+## Mods: nothing to set
+
+What is on out of the box (Mods page, all on by default):
+- **Quick start:** no logos or long intro, short loading screens.
+- **Own view for every player:** in a match every PC shows its own player
+  full screen with its own camera. On one PC the game keeps its shared
+  screen (option "On one PC": split screen instead).
+- **Third player: Daffy Duck:** he joins next to Taz only when there is a
+  third player: three seated in a LAN room, or, on one PC, a controller for
+  Player 3 in Settings -> Input. With two players he stays away. Options:
+  Character (Daffy, or the Transylvania enemy), Daffy's sounds (Bugs' steps,
+  jumps and attack; Taz's; or none of Taz's).
+
+In a LAN room only the host's Mods count: the room plays the host's
+selection on every PC, and the guests' own selections are left as they were.
+
 ## Starting a match
 
-1. **Host, once:** in Mods turn on
-   - **Third player: Daffy Duck** (bbt.third-character "p3"; its
-     Character option is Daffy by default, the Transylvania enemy is the
-     other choice),
-   - **Two views** (bbt.own-view: each PC shows its own player),
-   - **Quick start** (no logos or long intro, short loading screens).
-   Guests do not need to change anything: the room plays the host's mods.
-2. **Host:** NETPLAY -> LAN / Direct IP -> Host Lobby -> Create Lobby
+1. **Host:** NETPLAY -> LAN / Direct IP -> Host Lobby -> Create Lobby
    (port 7777). Allow the game through the firewall if asked (UDP 7777).
-3. **Guests:** NETPLAY -> LAN / Direct IP -> Join Direct: the host's IP and
+2. **Guests:** NETPLAY -> LAN / Direct IP -> Join Direct: the host's IP and
    port 7777. If it says "No response", press Join Direct again.
-4. When everyone is seated (the room shows "3 / 3 seated"), the host
-   presses **PLAY**.
-5. In the game: NEW GAME -> **TWO PLAYERS** -> START GAME. Daffy joins
-   next to Taz in every level that has Taz.
-
-For two players, the host turns "Third player" off (otherwise Daffy stands
-still next to Taz with nobody to steer him).
+3. When everyone is seated (two or three players), the host presses
+   **PLAY**.
+4. In the game: NEW GAME -> **TWO PLAYERS** -> START GAME. With three
+   players Daffy joins next to Taz in every level that has Taz.
 
 ## Saves
 
@@ -51,8 +57,9 @@ still next to Taz with nobody to steer him).
 
 ## The rules of the three-player game
 
-- Daffy is a third hero: enemies go for him too, he has his own health
-  panel (under Bugs'), and he follows the game's rule for Bugs and Taz:
+- Daffy is a third hero: □ is his attack (a kick; it hits like Taz's
+  spin), enemies go for him too, he has his own health panel (under
+  Bugs'), and he follows the game's rule for Bugs and Taz:
   when he loses all his health he is out until Bugs and Taz have both gone
   down and the team comes back (a life lost).
 - A player who is out watches a teammate who is still playing.

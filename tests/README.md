@@ -39,7 +39,12 @@ Each test module starts the game once, headless, on a free localhost port,
 with a fresh memory-card folder (so no save and no savestate of yours is
 used or touched), and plays from a cold boot like a person would. The
 build's `mods/state.toml` is replaced by the features the test needs and
-put back afterwards (also after an interrupted run). The tests refuse to
+put back afterwards (also after an interrupted run). The features on by
+default (Quick start, the own view, the third player) are written as off
+unless the test names them, and a named third player / own view keeps the
+options the tests were written with (appear "always", offline "split"),
+so each test runs exactly the selection it names (`tests/bbt/game.py`
+`state_toml`; `"_defaults": True` keeps the manifests' defaults). The tests refuse to
 run against `build-release`, which holds your own mod selection
 (`BBT_ALLOW_RELEASE=1` overrides).
 
@@ -110,7 +115,15 @@ run against `build-release`, which holds your own mod selection
   retargeted moves, image under 0x1E000 bytes), he spawns, running and
   jumping play the retargeted animations from the mod image and move him,
   he lands drawn, his HUD panel and the hit rule work (`check_p3_panel`),
-  and a deadly hit takes him out.
+  and a deadly hit takes him out. His attack (□, Taz's spin) plays Bugs'
+  attack from the mod image, sets the attack state, attaches no tornado and
+  is drawn (`spin_drawn`); his moves start only Bugs' sounds (the sound
+  slots in the per-frame RAM ring), and with sounds = "quiet" none of
+  Taz's or Bugs' (a run of its own).
+- `test_game_defaults.py` — nothing selected (the manifests' defaults,
+  offline, 3-player config): Quick start skips the logos and the intro,
+  the third player does not appear without a controller for seat 3, and
+  one PC keeps the game's shared screen.
 - `test_game_net.py` — netplay with our mods (`build-net`): two headless
   peers on 127.0.0.1 in a rollback match (`--netplay`, `PSX_NET_MODE=rollback`),
   each from a folder of its own under `build-tests/out/net-*/` (a link to
@@ -162,9 +175,13 @@ Long soaks, run by hand (not by `run_tests.py`):
 
 `test_game_lanroom.py` also has `test_three_pcs_in_one_room`: three
 launchers in one LAN room with the 3-player config, two guests by Direct IP,
-the host's plan (Daffy, Two views, Quick start) on all three, each PC its
-own view, digests equal, and each guest's copy of the match card equal to
-the host's.
+the host's plan (Daffy appearing because seat 3 is taken, the own view,
+Quick start) on all three, each PC its own view, digests equal, and each
+guest's copy of the match card equal to the host's; and
+`test_two_pcs_in_a_three_seat_room`: the shipped setup with two players
+and nothing selected: the match starts with two of three seats, Quick
+start is on, no third player appears, each PC its own view, digests
+equal.
 
 A game test takes 2–4 minutes (headless runs at ~74 frames/s; a cold boot to
 Granwich is ~5,000 frames). Screenshots of every stage are in

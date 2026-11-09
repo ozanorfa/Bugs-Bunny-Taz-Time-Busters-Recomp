@@ -10,12 +10,16 @@ playable character and up to three players, each on their own PC.
 3. Controls: Settings -> Input in the launcher. On your own PC your own
    gamepad or keyboard is your player.
 
+Nothing needs to be set in Mods. Out of the box:
+- Quick start: no logos or long intro, short loading screens.
+- Own view: in a match, every PC shows its own player full screen.
+- Third player: Daffy Duck joins when a third player is there (three
+  seated in a LAN room). With two players he stays away.
+
 Playing together (LAN or Radmin VPN): see PLAYING_TOGETHER.md. In short:
-- The host turns on, once, in Mods: "Third player" (Daffy Duck), "Two
-  views" (each PC shows its own player full screen) and "Quick start".
-  Guests do not need to: the room uses the host's mods.
 - Host: NETPLAY -> LAN / Direct IP -> Host Lobby -> Create Lobby.
   Guests: NETPLAY -> LAN / Direct IP -> Join Direct with the host's IP.
+- The host presses PLAY when everyone is seated (two or three players).
 - In the game: NEW GAME -> TWO PLAYERS. Seat 1 is Bugs, seat 2 Taz, seat 3
   Daffy.
 

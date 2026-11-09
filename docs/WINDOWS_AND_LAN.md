@@ -6,7 +6,8 @@ source. **Not yet run on a Windows PC.** A Mac <-> Windows match is not
 promised by the framework docs either; the first match below is the test.
 
 The goal: one PC per player, each showing its own character full screen
-("Two views" mod), connected over LAN or Radmin VPN.
+(the "Own view for every player" mod, on by default), connected over LAN or
+Radmin VPN.
 
 ## What has to be identical on both machines
 
@@ -161,8 +162,9 @@ Then:
 
 1. **Host** (either machine): NETPLAY -> LAN / Direct IP -> Host Lobby.
    Advertised IP = the host's Radmin address, Port 7777 -> Create Lobby.
-   Mods (host only): Quick start and "Two views" (bbt.own-view). The room
-   sends this selection to the guest.
+   Mods: nothing to select. Quick start, the own view and the third
+   player (Daffy, only with three seated) are on by default; the room
+   sends the host's selection to the guests.
 2. **Guest:** NETPLAY -> LAN / Direct IP -> Join Direct: Host IP = the
    host's Radmin address, Port 7777.
 3. Host presses PLAY. Seat P1 = host (Bugs), P2 = guest (Taz).

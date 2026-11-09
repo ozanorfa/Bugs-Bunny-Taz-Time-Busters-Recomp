@@ -654,7 +654,8 @@ static int put_change(Out* o, int node, RtState* have, const RtState* want, int 
 }
 
 /* Copies the source frame's collision box (0x900, node 0) and root command
- * (0xA00, node remapped; dropped for a node the target lacks). */
+ * (0xA00, node remapped; dropped for a node the target lacks, or for all
+ * of them with rig->no_root). */
 static int put_extras(Out* o, const RtRig* rig, const uint8_t* src, uint32_t size, uint32_t frame)
 {
     const unsigned count = rd16(src + frame + 2);
@@ -670,7 +671,7 @@ static int put_extras(Out* o, const RtRig* rig, const uint8_t* src, uint32_t siz
             for (int i = 0; i <= na; ++i)
                 put(o, rd16(src + p + 2u * (uint32_t)i));
             ++n;
-        } else if (op == 0xA00u) {
+        } else if (op == 0xA00u && !rig->no_root) {
             const int s = cmd & 0xFF;
             const int d = (s > 0 && s < RT_MAX_NODES) ? rig->dst_of[s] : 0;
             if (d) {

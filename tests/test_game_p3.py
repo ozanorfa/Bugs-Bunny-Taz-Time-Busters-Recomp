@@ -113,7 +113,16 @@ class ThirdPlayer(unittest.TestCase):
         c = self.c
         self.assertTrue(in_ram(a), f"no third actor: {self.counters()}")
         self.assertIn(a, self.placed(), "third actor not in the placed-actor list")
-        self.assertEqual(c.u32(a + 0x08), TYPE_TAZ, "type word (hero flag back after the pass)")
+        # the plugin clears the hero flag for the length of each actor pass;
+        # a read can land inside one (seen once in a full-suite run), so the
+        # flag must be back within a few frames
+        types = []
+        for _ in range(4):
+            types.append(c.u32(a + 0x08))
+            if types[-1] == TYPE_TAZ:
+                break
+            c.wait_frames(1)
+        self.assertEqual(types[-1], TYPE_TAZ, f"type word (hero flag back after the pass): {types}")
         self.assertEqual(c.u16(a + 0x34), 3, "identity: Taz's")
         self.assertEqual(c.u32(a + 0x98), int(self.actor_show()["nodes"], 16), "own resource list")
         self.assertNotEqual(a, taz)

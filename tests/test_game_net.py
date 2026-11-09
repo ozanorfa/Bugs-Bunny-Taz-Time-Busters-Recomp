@@ -256,8 +256,9 @@ class NetplayWithMods(unittest.TestCase):
                 data = b"".join(pe.client.read(img + o, min(0x4000, size - o)) for o in range(0, size, 0x4000))
                 images.append(hashlib.sha256(data).hexdigest())
             self.assertEqual(len(set(images)), 1, f"the peers built different Daffy images {images}")
+        # "auto" (the default): he appears because the third seat is taken
         self.three_peers("net-three-daffy",
-                         {"p3": {"enabled": True, "values": {"character": "daffy"}},
+                         {"p3": {"enabled": True, "values": {"character": "daffy", "appear": "auto"}},
                           "bbt.quick-start/quick-start": True}, same_daffy)
 
     def three_peers(self, name: str, three: dict, check=None):

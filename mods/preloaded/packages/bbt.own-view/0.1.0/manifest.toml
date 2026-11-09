@@ -14,14 +14,29 @@ game_id = "SLUS-01144"
 
 [[feature]]
 id = "two-views"
-name = "Two views (experiment)"
-description = "Developer test. In a 2-player level, turns on the game engine's own extra views, each with its own single-player camera and controls: two views, three with the third player (Third Character: p3). Offline the screen is split into bands (player 1 on top). In a netplay match with OpenGL each player sees their own character full screen. Every player needs it."
+name = "Own view for every player"
+description = "In a 2-player level, every player gets their own camera and controls (the game engine's own extra views: two, three with the third player). In a netplay match each PC shows its own player full screen. On one PC the game keeps its shared screen unless \"On one PC\" is set to split screen (bands, player 1 on top). In a LAN room the host's choice counts for everyone."
 group = "Own view (in development)"
-default_enabled = false
+default_enabled = true
 
 [[plugin]]
 feature = "two-views"
 id = "bbt.own-view.two-views"
+
+[[option]]
+feature = "two-views"
+id = "offline"
+label = "On one PC"
+type = "choice"
+default = "shared"
+
+[[option.choice]]
+value = "shared"
+label = "The game's shared screen"
+
+[[option.choice]]
+value = "split"
+label = "Split screen, a band per player"
 
 # Actor_Update is hooked through bbt.shared (src/mods/actor_update_hub.h).
 [[requirement]]

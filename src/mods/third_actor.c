@@ -62,6 +62,15 @@
  * Enemies: scripts that ask for the nearer / farther hero (FUN_80029424
  * codes 4-7) also consider the clone (player_ref_wrap).
  *
+ * When it appears (option "appear", default "auto"): only with a third
+ * player: in netplay when seat 2 is occupied, offline when seat 2 has a
+ * controller (Settings -> Input, Player 3). "always" spawns it anyway (the
+ * tests drive seat 2 through the debug command).
+ *
+ * Daffy (option "character" = daffy): his attack is drawn (draw_pass_wrap)
+ * and his sounds are Bugs' (sound_start_wrap, option "sounds"); NOTES.md
+ * "Daffy's spin and sounds".
+ *
  * Tests: {"cmd":"mod_cmd","name":"bbt.p3actor","args":"show"|"group <n>"|
  * "ref-third off"|"ref-third on"} (the last two switch the codes 4-7 rule,
  * for an A/B in tests only),
@@ -80,6 +89,8 @@
 #include "donor_runtime.h"
 #include "func_override.h"
 #include "mod_plugins.h"
+#include "psx_netplay.h"
+#include "sio.h"
 #include "third_player.h"
 #include "trca01_profile.h"
 
@@ -163,6 +174,8 @@
 #define ST_TEAM_DOWN 0x38u    /* 1 while Bugs and Taz are both down */
 #define ST_REF_OFF   0x3Cu    /* tests only (debug command "ref-third off"): scripts never pick the clone */
 #define ST_HIT       0x40u    /* the clone's own hit counter (Taz's is 0x8008DA0D) */
+#define ST_PREV_ANIM 0x44u    /* the clone's animation id after its last update (Daffy's attack sound) */
+#define ST_LAST      ST_PREV_ANIM
 #define STATE_MAGIC  0x33544242u
 
 
@@ -199,6 +212,15 @@ static int g_default_count;
  * activation): 0 the TRCA01 enemy, 1 Daffy (daffy_profile.h). */
 static int g_daffy_char;
 #define RT (g_daffy_char ? bbt_daffy_runtime() : bbt_donor_runtime())
+/* Daffy's attack moves were built from Bugs' attack (daffy_moves.c): his
+ * body is drawn during the spin (draw_pass_wrap). */
+static int g_daffy_attack;
+/* Option "sounds" (Daffy only): which sounds his moves make. */
+enum { SOUNDS_BUGS, SOUNDS_TAZ, SOUNDS_QUIET };
+static int g_sounds = SOUNDS_BUGS;
+/* Option "appear": 1 = always, 0 = only with a third player (the default). */
+static int g_appear_always;
+#define P3_SEAT_INDEX 2   /* the third player's seat (third_player.c) */
 
 /* psx_mod_counter_add keeps the name pointer: literal names only. */
 #define count(event, n) psx_mod_counter_add(PLUGIN_ACTOR "." event, (uint32_t)(n))
@@ -235,23 +257,28 @@ static void prepare(void)
     g_map_count = 0;
     uint16_t hold_src = DONOR_IDLE_SUB;
     if (g_daffy_char) {
-        /* Daffy (Phase 5, first step): his set-up, the synthetic spin
-         * (spin start too: it must name the attach node for the tornado),
-         * and everything else on the still pose of his only animation. */
-        static const DonorAnimMap kDaffy[] = {
-            {0x0001u, 0x0001u},
-            {0x0072u, DONOR_SUB_SPIN}, {0x004Fu, DONOR_SUB_SPIN}, {0x0097u, DONOR_SUB_SPIN},
-        };
-        for (int i = 0; i < (int)(sizeof kDaffy / sizeof kDaffy[0]); ++i)
-            g_map[g_map_count++] = kDaffy[i];
+        /* Daffy: his set-up; Bugs' moves retargeted onto him (daffy_moves.c:
+         * his attack for Taz's spin family, the still pose from Bugs' idle);
+         * everything else on the still pose. */
+        g_map[g_map_count++] = (DonorAnimMap){0x0001u, 0x0001u};
         hold_src = DAFFY_POSE_SUB;
-        /* Bugs' moves retargeted onto him (daffy_moves.c), and the still
-         * pose from Bugs' idle */
         BbtDaffyMoveStats ms;
         const int k = bbt_daffy_add_moves(&g_donor, g_map + g_map_count, MAP_CAP - g_map_count,
                                           DONOR_SUB_HOLD, DONOR_HOLD_FRAMES, &ms);
         if (k > 0)
             g_map_count += k;
+        /* Without Bugs' attack: the synthetic spin (spin start too: it must
+         * name the attach node for the tornado). */
+        static const uint16_t kSpin[] = {0x0072u, 0x004Fu, 0x0097u};
+        for (int i = 0; i < 3; ++i) {
+            int mapped = 0;
+            for (int m = 0; m < g_map_count; ++m)
+                mapped |= g_map[m].target_sub == kSpin[i];
+            if (!mapped && g_map_count < MAP_CAP)
+                g_map[g_map_count++] = (DonorAnimMap){kSpin[i], DONOR_SUB_SPIN};
+        }
+        g_daffy_attack = ms.attack == 3;
+        count("daffy_attack", ms.attack);
         count("daffy_moves", ms.moves);
         count("daffy_move_bytes", ms.bytes);
         count("daffy_without_source", ms.without_source);
@@ -330,13 +357,18 @@ static void prepare(void)
     g_prepared = 1;
 }
 
-static void read_size_option(void)
+static void read_options(void)
 {
     char v[16];
-    /* the manifest's default is Daffy (Phase 5) */
+    /* the manifest's defaults: Daffy, Bugs' sounds, only with a third player */
     g_daffy_char = psx_mod_option_value("bbt.third-character", "p3", "character", v, sizeof v)
                        ? strcmp(v, "daffy") == 0
                        : 1;
+    g_sounds = SOUNDS_BUGS;
+    if (psx_mod_option_value("bbt.third-character", "p3", "sounds", v, sizeof v))
+        g_sounds = strcmp(v, "taz") == 0 ? SOUNDS_TAZ : strcmp(v, "quiet") == 0 ? SOUNDS_QUIET : SOUNDS_BUGS;
+    g_appear_always = psx_mod_option_value("bbt.third-character", "p3", "appear", v, sizeof v) &&
+                      strcmp(v, "always") == 0;
     if (g_daffy_char) {
         /* his own size: a little shorter than Bugs, as in the cartoons; the
          * size option is the enemy's */
@@ -357,7 +389,7 @@ static void activate(void)
 {
     g_active = 1;
     bbt_actor_update_hook(BBT_ACTOR_HOOK_INPUT, &kInputHook);
-    read_size_option();
+    read_options();
     if (!g_block)
         g_block = psx_mod_alloc_guest_memory(BLK_SIZE, 16);
     prepare();
@@ -730,6 +762,24 @@ int bbt_p3_out(void)
     return bbt_p3_actor() && st_get(ST_OUT) != 0;
 }
 
+/* Is there a third player? In netplay: seat 2 is occupied (the session's
+ * seats are the same on every peer). Offline: seat 2 has a controller
+ * (Player 3 is not "none" in Settings -> Input; a build or config with two
+ * seats has no seat 2). */
+static int third_player_present(void)
+{
+    if (g_appear_always)
+        return 1;
+    if (psx_netplay_active()) {
+        uint32_t seats = psx_netplay_peer_seats();
+        const int me = psx_netplay_local_slot();
+        if (me >= 0 && me < 32)
+            seats |= 1u << me;
+        return (seats & (1u << P3_SEAT_INDEX)) != 0;
+    }
+    return sio_get_pad_connected(P3_SEAT_INDEX);
+}
+
 /* Wrap of the actor pass FUN_80013030(list, ...). */
 static int actor_pass_wrap(CPUState* cpu)
 {
@@ -739,7 +789,7 @@ static int actor_pass_wrap(CPUState* cpu)
         return 1;
     }
     if (st_get(ST_MAGIC) != STATE_MAGIC) {
-        for (uint32_t f = 0; f <= ST_HIT; f += 4)
+        for (uint32_t f = 0; f <= ST_LAST; f += 4)
             st_set(f, 0);
         st_set(ST_MAGIC, STATE_MAGIC);
     }
@@ -759,7 +809,9 @@ static int actor_pass_wrap(CPUState* cpu)
      * without the clone; the shared game spawns it as usual. */
     if (!a && (psx_mod_read_byte(ADDR_MODE_FLAGS) & MODE_TWO_PLAYER) && !psx_mod_local_view_scope()) {
         const uint32_t taz = placed_taz();
-        if (source_pristine(taz)) {
+        if (source_pristine(taz) && !third_player_present()) {
+            count("no_third_player", 1);
+        } else if (source_pristine(taz)) {
             spawn(cpu, taz);
             a = st_get(ST_ACTOR);
             if (a && st_get(ST_OUT))
@@ -791,11 +843,16 @@ static int actor_pass_wrap(CPUState* cpu)
  * writes Taz's identity-keyed globals (its death sets "Taz died", its health
  * becomes Taz's kept health, a hit flashes Taz's HUD panel): they are put
  * back after it (save: the four bytes). A dead clone gets no input. */
+/* Actor_Update's return address, from the clone's input_pre to its
+ * input_post (one call; the guest call in daffy_attack_sound returns there). */
+static uint32_t g_update_ra;
+static void daffy_attack_sound(CPUState* cpu, uint32_t a);
+
 static int input_pre(CPUState* cpu, uint32_t a, uint32_t* save)
 {
-    (void)cpu;
     if (!g_block || g_prepared != 1 || a == 0 || a != st_get(ST_ACTOR))
         return 0;
+    g_update_ra = cpu->gpr[31];
     *save = (uint32_t)psx_mod_read_byte(ADDR_HERO_DOWN) |
             (uint32_t)psx_mod_read_byte(ADDR_TAZ_HEALTH) << 8 |
             (uint32_t)psx_mod_read_byte(ADDR_TAZ_HIT) << 16 |
@@ -827,8 +884,6 @@ static int input_pre(CPUState* cpu, uint32_t a, uint32_t* save)
 
 static void input_post(CPUState* cpu, uint32_t a, uint32_t save)
 {
-    (void)cpu;
-    (void)a;
     const uint32_t rec = bbt_p3_record();
     uint8_t p2[INPUT_FIELDS], p3[INPUT_FIELDS];
     /* What the update consumed stays consumed for the third player. */
@@ -846,6 +901,7 @@ static void input_post(CPUState* cpu, uint32_t a, uint32_t save)
     psx_mod_write_byte(ADDR_TAZ_HEALTH, (uint8_t)(save >> 8));
     psx_mod_write_byte(ADDR_TAZ_HIT, (uint8_t)(save >> 16));
     psx_mod_write_byte(ADDR_GAUGE, (uint8_t)(save >> 24));
+    daffy_attack_sound(cpu, a);
     count("updates", 1);
 }
 
@@ -884,6 +940,127 @@ static int death_done_wrap(CPUState* cpu)
     }
     count("death_steps", 1);
     return 1;
+}
+
+/* Daffy's sounds. FUN_800640C8(actor, id, flags, byte) starts (flags bit
+ * 0) or stops (bit 1) a sound by id: the table at 0x80092AB4 (12-byte
+ * entries, the count at 0x8008DBB8), entry +2 = tone << 8 | VAB program.
+ * The clone runs Taz's code, so it plays Taz's bank (program 4: ids 61-82
+ * in every level looked at, Granwich, 8, 27, 55, 57). Bugs' bank has the
+ * same layout for his moves (steps tones 0 / 1, jump 2, land 3), so each
+ * of Taz's move sounds has a Bugs counterpart (measured per action, NOTES.md
+ * "Daffy's spin and sounds"). "bugs": those are played as Bugs', the rest of
+ * Taz's bank is not played; "quiet": none of Taz's bank; "taz": all of it.
+ * Other banks (impacts, pick-ups) play as they are. Guest state only, the
+ * same on every peer. */
+#define ADDR_SOUND_START 0x800640C8u
+#define ADDR_SOUND_TABLE 0x80092AB4u
+#define ADDR_SOUND_COUNT 0x8008DBB8u
+#define SOUND_ENTRY      12u
+#define TAZ_PROGRAM      4u
+/* addiu sp,sp,-0x30 / sw s5,0x24(sp) / move s5,a0 / lui v0,0x8009 */
+static const uint32_t kSoundStartGuard[4] = {0x27BDFFD0u, 0xAFB50024u, 0x0080A821u, 0x3C028009u};
+static const uint16_t kTazToBugsSound[][2] = {
+    {71, 10}, {72, 11},   /* steps */
+    {74, 19}, {75, 23},   /* jump, land */
+    {63, 2},              /* stop after running */
+    {82, 22},             /* the spin -> Bugs' attack */
+};
+
+static int taz_bank(uint16_t id)
+{
+    const int n = (int16_t)psx_mod_read_half(ADDR_SOUND_COUNT);
+    for (int i = 0; i < n && i < 512; ++i) {
+        const uint32_t e = ADDR_SOUND_TABLE + SOUND_ENTRY * (uint32_t)i;
+        if (psx_mod_read_half(e) == id)
+            return (psx_mod_read_half(e + 2u) & 0xFFu) == TAZ_PROGRAM;
+    }
+    return 0;
+}
+
+static int sound_start_wrap(CPUState* cpu)
+{
+    if (!g_daffy_char || g_sounds == SOUNDS_TAZ || cpu->gpr[4] == 0 || cpu->gpr[4] != bbt_p3_actor())
+        return 0;
+    const uint16_t id = (uint16_t)cpu->gpr[5];
+    if (!taz_bank(id))
+        return 0;
+    if (g_sounds == SOUNDS_BUGS)
+        for (uint32_t k = 0; k < sizeof kTazToBugsSound / sizeof kTazToBugsSound[0]; ++k)
+            if (kTazToBugsSound[k][0] == id) {
+                const uint32_t actor = cpu->gpr[4], flags = cpu->gpr[6];
+                cpu->gpr[5] = kTazToBugsSound[k][1];
+                func_override_call_original(cpu);
+                count("sound_as_bugs", 1);
+                /* diagnostics: did a start get a sound slot (0x80093274,
+                 * 24 x 0x1C: +0 flags, +4 actor, +8 entry)? */
+                if (flags & 1u) {
+                    int slot = 0;
+                    for (uint32_t s = 0; s < 24 && !slot; ++s) {
+                        const uint32_t base = 0x80093274u + 0x1Cu * s;
+                        slot = (psx_mod_read_half(base) & 0x8000u) && psx_mod_read_word(base + 4u) == actor &&
+                               psx_mod_read_half(psx_mod_read_word(base + 8u)) == kTazToBugsSound[k][1];
+                    }
+                    if (slot)
+                        count("sound_slot", 1);
+                    else
+                        count("sound_no_slot", 1);
+                }
+                return 1;
+            }
+    count("sound_muted", 1);
+    return 1;                 /* not played (the function returns nothing) */
+}
+
+/* Daffy's body during the spin. The draw pass FUN_8005EEDC skips an actor
+ * whose animation id +0x14C is 0x004F (the spin) or 0x00F6 (Ghidra,
+ * 0x8005F020): Taz is drawn as his tornado only. Daffy's spin is Bugs'
+ * attack (no tornado is attached), so for the pass his id reads as spin
+ * start 0x0072 and is put back after it. Nothing the pass calls reads
+ * +0x14C (its readers: Actor_Update, func_8001A088 / 8001EB14 / 8001F7E4,
+ * FUN_8005154C under Camera_Update, and this check). */
+#define ADDR_DRAW_PASS  0x8005EEDCu
+#define A_ANIM_ID       0x14Cu
+#define ANIM_SPIN       0x004Fu
+#define ANIM_SPIN_START 0x0072u
+/* addiu sp,sp,-0x30 / sw s2,0x18(sp) / lui s2,0x1F80 / ori s2,s2,0x3C */
+static const uint32_t kDrawPassGuard[4] = {0x27BDFFD0u, 0xAFB20018u, 0x3C121F80u, 0x3652003Cu};
+
+static int draw_pass_wrap(CPUState* cpu)
+{
+    const uint32_t a = (g_daffy_char && g_daffy_attack) ? bbt_p3_actor() : 0u;
+    if (!a || psx_mod_read_half(a + A_ANIM_ID) != ANIM_SPIN)
+        return 0;
+    psx_mod_write_half(a + A_ANIM_ID, ANIM_SPIN_START);
+    func_override_call_original(cpu);
+    if (psx_mod_read_half(a + A_ANIM_ID) == ANIM_SPIN_START)
+        psx_mod_write_half(a + A_ANIM_ID, ANIM_SPIN);
+    count("spin_drawn", 1);
+    return 1;
+}
+
+/* Taz's spin sound (82) is started by his tornado, an actor of its own:
+ * Daffy's spin (no tornado) made only the stop call (measured). His attack
+ * starts its sound here, on the update that enters spin start 0x0072:
+ * Bugs' attack (22) with "bugs", Taz's spin (82) with "taz", nothing with
+ * "quiet". The flags and last argument are those of the game's own sound
+ * events (FUN_8002D6D4: 1 = start, the byte at 0x8008DD28). */
+#define SOUND_BUGS_ATTACK 22u
+#define SOUND_TAZ_SPIN    82u
+#define ADDR_SOUND_ARG    0x8008DD28u
+
+static void daffy_attack_sound(CPUState* cpu, uint32_t a)
+{
+    const uint16_t anim = psx_mod_read_half(a + A_ANIM_ID);
+    const uint32_t prev = st_get(ST_PREV_ANIM);
+    st_set(ST_PREV_ANIM, anim);
+    if (!g_daffy_char || !g_daffy_attack || g_sounds == SOUNDS_QUIET || anim != ANIM_SPIN_START ||
+        prev == ANIM_SPIN_START || !g_update_ra)
+        return;
+    const uint32_t id = g_sounds == SOUNDS_TAZ ? SOUND_TAZ_SPIN : SOUND_BUGS_ATTACK;
+    (void)psx_mod_call_guest(cpu, ADDR_SOUND_START, g_update_ra, a, id, 1u,
+                             psx_mod_read_byte(ADDR_SOUND_ARG));
+    count("attack_sound", 1);
 }
 
 static void session_reset(void)
@@ -945,6 +1122,12 @@ PSX_MOD_CONSTRUCTOR(register_bbt_third_actor)
     (void)psx_mod_register_function_override(
         PLUGIN_ACTOR ":player-ref", ADDR_PLAYER_REF,
         player_ref_wrap, kPlayerRefGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(
+        PLUGIN_ACTOR ":daffy-sounds", ADDR_SOUND_START,
+        sound_start_wrap, kSoundStartGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(
+        PLUGIN_ACTOR ":daffy-attack-drawn", ADDR_DRAW_PASS,
+        draw_pass_wrap, kDrawPassGuard, 4, FO_CREDIT_SELF);
     (void)psx_mod_register_session_reset_plugin(PLUGIN_ACTOR, session_reset);
     (void)psx_mod_register_command("bbt.p3actor", p3actor_command);
 }

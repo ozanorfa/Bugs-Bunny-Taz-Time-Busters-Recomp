@@ -73,6 +73,11 @@ typedef struct RtRig {
     RtState dst_rest[RT_MAX_NODES];    /* frame 0 of the target's rest animation */
     uint8_t hips_src, hips_dst;
     uint8_t toes_src[2], toes_dst[2];
+    /* 1: rt_retarget / rt_still drop the source's root commands (0xA00).
+     * The game attaches carried things at the root node; Taz's tornado is
+     * attached during spin start only when the animation has one. 0 after
+     * rt_rig_build. */
+    uint8_t no_root;
 } RtRig;
 
 /* Builds the rig from both skeletons' set-up animations and a rest

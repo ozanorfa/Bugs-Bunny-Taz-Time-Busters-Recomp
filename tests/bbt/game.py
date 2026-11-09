@@ -65,17 +65,37 @@ def free_port() -> int:
 DEFAULT_PACKAGE = "bbt.third-character"
 
 
+# Features the manifests switch on by default (2026-11-08: Quick start, the
+# own view, the third player). A run selects exactly what it names: these
+# are written as off unless named, so every test keeps the selection it was
+# written for. "_defaults": True leaves the manifests' defaults alone (the
+# tests of the defaults themselves).
+DEFAULT_ON = ("p3", "bbt.own-view/two-views", "bbt.quick-start/quick-start")
+# Options whose default changed with that, kept as the tests were written:
+# the third player appears only with one ("auto") and the own view keeps the
+# shared screen on one PC ("shared"). A test that names the option wins.
+TEST_OPTIONS = {"p3": {"appear": "always"}, "bbt.own-view/two-views": {"offline": "split"}}
+
+
 def state_toml(features: dict) -> str:
     """mods/state.toml selecting mod features (the format the runtime writes,
     mod_packages.cpp). A key is a feature of bbt.third-character, or
     "<package>/<feature>"; a value is True / False, or a dict
     {"enabled": bool, "values": {option: value}}. Options not given keep
-    their defaults."""
+    their defaults, except TEST_OPTIONS; features in DEFAULT_ON that are not
+    named are written as off (unless "_defaults": True)."""
+    features = dict(features)
+    keep_defaults = bool(features.pop("_defaults", False))
+    if not keep_defaults:
+        for key in DEFAULT_ON:
+            features.setdefault(key, False)
     lines = ["format_version = 2", ""]
     entries = []
     for key, sel in features.items():
         pkg, _, fid = key.rpartition("/")
         on, values = (sel.get("enabled", True), sel.get("values", {})) if isinstance(sel, dict) else (sel, {})
+        if on and not keep_defaults and key in TEST_OPTIONS:
+            values = {**TEST_OPTIONS[key], **values}
         entries.append((pkg or DEFAULT_PACKAGE, fid, bool(on), values))
     for pkg in dict.fromkeys(e[0] for e in entries):
         lines += ["[[package]]", f'id = "{pkg}"', ""]

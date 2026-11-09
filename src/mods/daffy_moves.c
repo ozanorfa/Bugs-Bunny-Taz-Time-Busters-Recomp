@@ -45,11 +45,25 @@ static const RtJoint kJoints[] = {
 static const uint8_t kToesBugs[2] = {31, 35};
 static const uint8_t kToesDaffy[2] = {33, 37};
 
-/* Taz's spin family keeps the synthetic spin; Bugs' animation of the same
- * number is another move (0x004F: 4 frames for Bugs, Taz's 24-frame spin). */
+/* Taz's spin family: Bugs' animation of the same number is another move
+ * (0x004F: 4 frames for Bugs, Taz's 24-frame spin). */
 static int spin_family(uint16_t sub)
 {
     return sub == 0x0072u || sub == 0x004Fu || sub == 0x0097u || sub == 0x0073u;
+}
+
+/* The spin is Taz's only attack: +0x20 ATTACK is set only while spin start
+ * 0x0072 and the spin 0x004F play (measured, NOTES.md "Daffy's spin and
+ * sounds"). Daffy attacks with Bugs' □ attack instead of Taz's tornado: the
+ * spin start holds its first frame, the spin (and 0x0097, hidden like it)
+ * plays it whole, at Taz's frame counts, so the game's timing and the hit
+ * stay Taz's. Without root commands the game attaches no tornado. 0x0073
+ * (the wobble after a held spin) keeps the still pose. */
+#define BUGS_ATTACK 0x003Au   /* Bugs' attack on □ (ATTACK while it plays, measured) */
+
+static int attack_role(uint16_t sub)
+{
+    return sub == 0x0072u || sub == 0x004Fu || sub == 0x0097u;
 }
 
 static const DonorBlob* find(const Donor* d, uint16_t sub)
@@ -106,10 +120,31 @@ int bbt_daffy_add_moves(Donor* daffy, DonorAnimMap* map, int cap, uint16_t hold_
             stats->bytes += len;
         }
     }
+    const DonorBlob* attack = find(&bugs, BUGS_ATTACK);
     for (int i = 0; i < taz.anim_count && n < cap; ++i) {
         const DonorBlob* t = &taz.anims[i];
-        if (t->sub == 0x0001u || spin_family(t->sub) || find(daffy, t->sub))
+        if (t->sub == 0x0001u || find(daffy, t->sub))
             continue;
+        if (spin_family(t->sub)) {
+            if (!attack || !attack_role(t->sub))
+                continue;
+            rig->no_root = 1;
+            const uint32_t len =
+                t->sub == 0x0072u
+                    ? rt_still(rig, bugs.image + attack->off, attack->size, 0, taz.image + t->off,
+                               t->frames, buf, cap_bytes)
+                    : rt_retarget(rig, bugs.image + attack->off, attack->size, taz.image + t->off,
+                                  t->frames, buf, cap_bytes);
+            rig->no_root = 0;
+            if (!len || !donor_append_anim(daffy, t->sub, buf, len)) {
+                ++stats->failed;
+                continue;
+            }
+            map[n++] = (DonorAnimMap){t->sub, t->sub};
+            ++stats->attack;
+            stats->bytes += len;
+            continue;
+        }
         const DonorBlob* b = find(&bugs, t->sub);
         if (!b) {
             ++stats->without_source;
