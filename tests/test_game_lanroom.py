@@ -5,8 +5,10 @@ Both peers run the launcher with its own scripting hook (recomp-ui
 launcher_debug.h: LNG_SCRIPT, LNG_TEST_HIDDEN=1) and a hidden game window
 (PSX_HIDDEN_WINDOW=1), each from a folder of its own (tests/bbt/net.py):
 the host opens NETPLAY -> LAN / Direct IP, names itself, Host Lobby ->
-Create Lobby (port 7777); the guest names itself and joins with Join
-Direct (127.0.0.1:7777, the dialog's defaults); the host presses PLAY.
+Create Lobby (on a free UDP port typed into the dialog: the default 7777
+may be held by a player's own game or another project's room test); the
+guest names itself and joins with Join Direct (127.0.0.1 and that port);
+the host presses PLAY.
 The launcher layout is fixed with size:1100x750 (logical pixels), so the
 click positions below are that layout's (found from its screenshots).
 
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -58,6 +61,21 @@ CREATE_LOBBY = "546,545"      # Host Lobby dialog: Create Lobby
 JOIN_DIRECT = "981,689"       # lobby list: Join Direct
 JOIN_DIRECT_OK = "542,354"    # Join Direct dialog (127.0.0.1:7777): Join Direct
 PLAY = "971,689"              # room: PLAY
+HOST_PORT_FIELD = "701,416"   # Host Lobby dialog: Port (layout shared by the Fighting Force session)
+JOIN_PORT_FIELD = "415,262"   # Join Direct dialog: Port
+
+
+def free_udp_port() -> int:
+    """A UDP port nothing holds now: the room's default 7777 is also what a
+    player's own game (or another project's room test) uses."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.bind(("0.0.0.0", 0))
+        return s.getsockname()[1]
+
+
+def port_steps(field: str, port: int) -> str:
+    """Script steps that put `port` into a dialog's Port field."""
+    return f"click:{field};wait:5;key:End;wait:2;" + "key:Backspace;wait:1;" * 6 + f"text:{port};wait:5;"
 
 
 def script(out: Path, name: str, steps: str) -> str:
@@ -86,6 +104,7 @@ class LanRoom(unittest.TestCase):
         self.repo_toml = config.game_toml().read_bytes()
         self.toml = game_toml_copy(config.game_toml(), self.out / "game.toml")
         self.procs = []
+        self.port = free_udp_port()
         # macOS: the launchers' hidden windows stop advancing while the
         # display sleeps (seen: the script never ran, no screenshot). -u wakes
         # a sleeping display (user activity), -d keeps it on for the test.
@@ -97,6 +116,10 @@ class LanRoom(unittest.TestCase):
     def tearDown(self):
         if getattr(self, "awake", None) and self.awake.poll() is None:
             self.awake.terminate()
+            try:
+                self.awake.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.awake.kill()
             self.awake = None
         for p, c, log in self.procs:
             try:
@@ -130,11 +153,11 @@ class LanRoom(unittest.TestCase):
     def test_host_plan_reaches_the_guest(self):
         o = self.out
         self.start("host", HOST_MODS,
-                   f"click:{HOST_LOBBY};wait:40;click:{CREATE_LOBBY};wait:900;"
+                   f"click:{HOST_LOBBY};wait:40;{port_steps(HOST_PORT_FIELD, self.port)}click:{CREATE_LOBBY};wait:900;"
                    f"shot:{o}/1_host_room.png;click:{PLAY};wait:20000")
         time.sleep(4)
         guest_dir = self.start("guest", GUEST_MODS,
-                               f"click:{JOIN_DIRECT};wait:30;click:{JOIN_DIRECT_OK};wait:300;"
+                               f"click:{JOIN_DIRECT};wait:30;{port_steps(JOIN_PORT_FIELD, self.port)}click:{JOIN_DIRECT_OK};wait:300;"
                                f"shot:{o}/2_guest_room.png;wait:20000")
         guest_state = (guest_dir / "mods" / "state.toml").read_text(encoding="utf-8")
 
@@ -195,16 +218,16 @@ class LanRoom(unittest.TestCase):
         o = self.out
         toml3 = three_player_toml(config.game_toml(), o / "game_3p.toml")
         self.start("host", HOST_MODS_3,
-                   f"click:{HOST_LOBBY};wait:40;click:{CREATE_LOBBY};wait:2000;"
+                   f"click:{HOST_LOBBY};wait:40;{port_steps(HOST_PORT_FIELD, self.port)}click:{CREATE_LOBBY};wait:2000;"
                    f"shot:{o}/3p_1_host_room.png;click:{PLAY};wait:20000", toml3)
         time.sleep(4)
         g1 = self.start("guest", GUEST_MODS,
-                        f"click:{JOIN_DIRECT};wait:30;click:{JOIN_DIRECT_OK};wait:300;"
+                        f"click:{JOIN_DIRECT};wait:30;{port_steps(JOIN_PORT_FIELD, self.port)}click:{JOIN_DIRECT_OK};wait:300;"
                         f"shot:{o}/3p_2_guest_room.png;wait:20000", toml3)
         time.sleep(4)
         # a Join Direct that got no answer leaves the dialog open: ask again
         g2 = self.start("guest2", GUEST_MODS,
-                        f"click:{JOIN_DIRECT};wait:30;click:{JOIN_DIRECT_OK};wait:300;"
+                        f"click:{JOIN_DIRECT};wait:30;{port_steps(JOIN_PORT_FIELD, self.port)}click:{JOIN_DIRECT_OK};wait:300;"
                         f"shot:{o}/3p_3a_guest2.png;click:{JOIN_DIRECT_OK};wait:300;"
                         f"shot:{o}/3p_3_guest2_room.png;wait:20000", toml3)
         # the hidden launchers draw slower under load (the full suite): the
@@ -283,11 +306,11 @@ class LanRoom(unittest.TestCase):
         o = self.out
         toml3 = three_player_toml(config.game_toml(), o / "game_3p_two.toml")
         self.start("host2", DEFAULTS,
-                   f"click:{HOST_LOBBY};wait:40;click:{CREATE_LOBBY};wait:1500;"
+                   f"click:{HOST_LOBBY};wait:40;{port_steps(HOST_PORT_FIELD, self.port)}click:{CREATE_LOBBY};wait:1500;"
                    f"shot:{o}/2of3_1_host_room.png;click:{PLAY};wait:20000", toml3)
         time.sleep(4)
         self.start("guest2of3", DEFAULTS,
-                   f"click:{JOIN_DIRECT};wait:30;click:{JOIN_DIRECT_OK};wait:300;"
+                   f"click:{JOIN_DIRECT};wait:30;{port_steps(JOIN_PORT_FIELD, self.port)}click:{JOIN_DIRECT_OK};wait:300;"
                    f"shot:{o}/2of3_2a_guest.png;click:{JOIN_DIRECT_OK};wait:300;"
                    f"shot:{o}/2of3_2_guest_room.png;wait:20000", toml3)
         deadline, running = time.monotonic() + 300, False
