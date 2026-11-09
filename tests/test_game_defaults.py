@@ -5,18 +5,26 @@ new-game intro skipped; with pad 2 in on one PC the game asks ONE / TWO
 PLAYERS), the own view
 on but keeping the game's shared screen on one PC (one view in a 2-player
 level), and the third player on but not appearing without a third player
-(this test process gives seat 2 no controller). A LAN room with the same
-defaults: test_game_lanroom.py test_two_pcs_in_a_three_seat_room."""
+(this test process gives seat 2 no controller). OfflineJoin: with a
+controller set for Player 3 (settings.toml p3_device), Daffy still waits
+until seat 3 presses a button, then comes at the next level start. A LAN
+room with the same defaults: test_game_lanroom.py
+test_two_pcs_in_a_three_seat_room."""
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import sys
+import time
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
-from bbt.client import pad  # noqa: E402
-from bbt.game import three_player_toml  # noqa: E402
+from bbt.client import DebugClient, pad  # noqa: E402
+from bbt.game import LEVEL_VICA01, Player, three_player_toml  # noqa: E402
+from bbt.net import _peer_folder, free_tcp_port  # noqa: E402
 from test_game_stock import start_run  # noqa: E402
 
 A3 = "bbt.third-character.p3-actor."
@@ -51,6 +59,75 @@ class Defaults(unittest.TestCase):
         self.assertEqual(c.u8(VIEW_COUNT), 1, "the screen is split on one PC")
         self.assertEqual(k.get(V + "views_set", 0) + k.get(V + "views_3", 0), 0)
         self.game.shot("1_granwich")
+
+
+class _Run:
+    def __init__(self, client):
+        self.client = client
+
+
+class OfflineJoin(unittest.TestCase):
+    """One PC, Player 3 set to the keyboard in this folder's settings.toml
+    (its seat counts as connected), nothing selected in Mods."""
+
+    @classmethod
+    def setUpClass(cls):
+        build = config.p3_build()
+        exe = config.exe_in(build)
+        cue = config.disc_cue()
+        if exe is None or cue is None or not cue.is_file():
+            raise unittest.SkipTest("no build or disc")
+        cls.out = config.out_dir() / "defaults_join"
+        shutil.rmtree(cls.out, ignore_errors=True)
+        link = _peer_folder(build, exe, cls.out, {"_defaults": True})
+        (cls.out / "settings.toml").write_text(
+            '[controller]\np1_device = "keyboard"\np2_device = "keyboard"\np3_device = "keyboard"\n')
+        toml = three_player_toml(config.game_toml(), cls.out / "game_3p.toml")
+        port = free_tcp_port()
+        cls.log = open(cls.out / "game.log", "w", encoding="utf-8")
+        cls.proc = subprocess.Popen(
+            [str(link), "--game", str(toml), "--disc", str(cue), "--headless",
+             "--memcard-dir", str((cls.out / "cards").resolve()), "--debug-port", str(port)],
+            cwd=str(cls.out), stdout=cls.log, stderr=subprocess.STDOUT,
+            env=dict(os.environ, PSX_DEBUG_SERVER="1"))
+        cls.c = DebugClient(port)
+        deadline = time.monotonic() + 120
+        while not cls.c.ping():
+            if cls.proc.poll() is not None or time.monotonic() > deadline:
+                cls.tearDownClass()
+                raise RuntimeError("the game did not start")
+            time.sleep(0.3)
+        cls.p = Player(_Run(cls.c))
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.c.quit()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            cls.proc.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            cls.proc.kill()
+        cls.log.close()
+
+    def k(self) -> dict:
+        return {x[len(A3):]: v for x, v in self.c.counters().items() if x.startswith(A3)}
+
+    def test_daffy_waits_for_seat_3(self):
+        c, p = self.c, self.p
+        self.assertTrue(p.straight_to_game(two=True), f"no 2-player Granwich (level {p.level()})")
+        c.wait_frames(120)
+        k = self.k()
+        self.assertGreaterEqual(k.get("no_third_player", 0), 1)
+        self.assertEqual((k.get("spawned", 0), k.get("p3_joined", 0)), (0, 0),
+                         "Daffy came with a Player 3 setting but nobody at seat 3")
+        c.mod_cmd("bbt.p3", f"{pad('cross'):04X}"); c.wait_frames(10); c.mod_cmd("bbt.p3", "off")
+        c.wait_frames(10)
+        self.assertEqual(self.k().get("p3_joined"), 1, "seat 3's button did not join")
+        self.assertTrue(p.jump_to_level(LEVEL_VICA01), "the next level did not load")
+        self.assertTrue(c.wait_until(lambda: self.k().get("spawned", 0) >= 1, 900, 10),
+                        "no Daffy at the next level after joining")
 
 
 if __name__ == "__main__":

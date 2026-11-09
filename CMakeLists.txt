@@ -46,19 +46,35 @@ endif()
 # (PSX_MAX_PLAYERS >= 5 is what enables the runtime's multitap and seat 3).
 set(BBT_MAX_PLAYERS 2 CACHE STRING "Controller seats compiled into the runtime")
 
+# The config the exe opens without --game (double-click, launcher). A build
+# with the multitap seats opens the 3-player config, so its launcher offers
+# three players and its LAN rooms three seats (a room's seat limit is the
+# config's `players`), and the launcher's multitap-analog choice goes into
+# the staged copy next to the exe, not into the repository's file. The
+# release package ships game_3p.toml as its game.toml, so packaging sets
+# -DBBT_DEFAULT_GAME_CONFIG=game.toml (packaging/release.toml).
+set(BBT_DEFAULT_GAME_CONFIG "" CACHE STRING
+    "Config opened without --game (empty: game_3p.toml with >= 5 seats, else game.toml)")
+if(BBT_DEFAULT_GAME_CONFIG)
+    set(_BBT_DEFAULT_CONFIG "${BBT_DEFAULT_GAME_CONFIG}")
+elseif(BBT_MAX_PLAYERS GREATER_EQUAL 5)
+    set(_BBT_DEFAULT_CONFIG "game_3p.toml")
+else()
+    set(_BBT_DEFAULT_CONFIG "game.toml")
+endif()
+
 psxrecomp_add_game_runtime(psx-runtime
     PRELOADED_MODS_DIR "${PSX_PRELOADED_MODS}"
     # ENABLE_NETPLAY_IF_PRESENT
     # NETPLAY_LOBBY_URL "ws://netplay.retcomm.net:8765"
     ENABLE_SETUP_WIZARD
     WINDOW_TITLE "BugsBunnyTaz Recompiled"
-    DEFAULT_GAME_CONFIG_PATH "game.toml"
+    DEFAULT_GAME_CONFIG_PATH "${_BBT_DEFAULT_CONFIG}"
     MAX_PLAYERS ${BBT_MAX_PLAYERS}
     # LAUNCHER_BOXART "${CMAKE_CURRENT_SOURCE_DIR}/launcher_assets/img/boxart.tga"
     APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/assets/psxrecomp.ico"
-    # Committed game C (psxrecomp_cli.py generate; git add generated). Release
-    # CI configures with -DPSXRECOMP_REQUIRE_GAME_C=ON so a checkout without
-    # it fails instead of building a setup host.
+    # Game C from psxrecomp_cli.py generate (generated/ is NOT committed in
+    # this project: it is derived from the disc, each machine generates it).
     GEN_MARKER "generated/SLUS_011.44_dispatch.c"
     GEN_FULL_GLOB "generated/SLUS_011.44_full_*.c"
     CODEGEN_SETUP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/codegen_setup.c"
@@ -84,7 +100,7 @@ target_sources(psx-runtime PRIVATE
 
 # Stage runtime configs next to the exe for direct build/ launches. Only copy
 # files that exist — never fail POST_BUILD when game_options.toml is absent.
-foreach(_PSX_RUNTIME_CONFIG game.toml game_options.toml)
+foreach(_PSX_RUNTIME_CONFIG game.toml game_3p.toml game_options.toml)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_PSX_RUNTIME_CONFIG}")
         add_custom_command(TARGET psx-runtime POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different

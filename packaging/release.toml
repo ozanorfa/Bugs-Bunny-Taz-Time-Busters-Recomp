@@ -11,12 +11,17 @@ version_file = "VERSION"
 # 2; generated from game.toml by tools/make_3p_toml.py): up to three PCs in
 # one LAN room, each with its own player. game.toml stays the codegen config.
 player_game_toml = "game_3p.toml"
+# One plain folder at the top of the ZIP, so "Extract All" or "Extract here"
+# gives the players a single folder with the exe and START_HERE.txt in it.
+zip_folder = "BugsBunnyTaz_Recompiled"
 
 [build]
 # Netplay (LAN / Direct IP, which is also what Radmin VPN uses; no online
 # ICE) and 5 controller seats for the third player (docs/WINDOWS_AND_LAN.md).
+# The package ships game_3p.toml as game.toml ([product] player_game_toml),
+# so the exe opens game.toml (a local 5-seat build opens game_3p.toml).
 cmake_args = ["-DPSX_SDL_BACKEND=SDL3", "-DPSX_PGXP_VARIANT=OFF", "-DPSX_NETPLAY=ON",
-              "-DRNET_ENABLE_ICE=OFF", "-DBBT_MAX_PLAYERS=5"]
+              "-DRNET_ENABLE_ICE=OFF", "-DBBT_MAX_PLAYERS=5", "-DBBT_DEFAULT_GAME_CONFIG=game.toml"]
 # Selective PGO defaults on for supported native GNU/Ninja toolchains. Do not
 # add per-title profile paths or reuse another build's training data.
 

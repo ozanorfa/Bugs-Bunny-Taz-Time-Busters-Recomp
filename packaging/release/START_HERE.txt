@@ -3,12 +3,26 @@ Bugs Bunny & Taz: Time Busters Recompiled @VERSION@
 A native PC version of the PlayStation game, with Daffy Duck as a third
 playable character and up to three players, each on their own PC.
 
-1. You need your own copy of the game disc (Bugs Bunny & Taz: Time Busters,
-   USA). No game data and no retail BIOS are included; OpenBIOS is bundled.
-2. Start BugsBunnyTaz_Recompiled and choose your disc image (.cue) when
-   asked. The launcher checks that it is the original USA disc.
-3. Controls: Settings -> Input in the launcher. On your own PC your own
-   gamepad or keyboard is your player.
+YOU NEED
+- Windows 10 or 11 (64-bit).
+- Your own copy of the game disc as a disc image: the .cue file and its
+  .bin file(s) of Bugs Bunny & Taz: Time Busters (USA). No game data and no
+  retail BIOS are included (OpenBIOS is bundled). A .chd image starts too,
+  but only .cue + .bin can play together with others.
+
+FIRST START (once)
+1. Right-click the ZIP -> "Extract All..." -> Extract. Do not start the game
+   from inside the ZIP: it cannot find its files there and cannot keep your
+   settings or saves. Keep the folder somewhere ordinary, like Desktop or
+   Documents (not Program Files).
+2. In the extracted folder, double-click BugsBunnyTaz_Recompiled.exe.
+   If Windows says "Windows protected your PC": click "More info", then
+   "Run anyway". (The game is not signed with a paid certificate, so
+   Windows asks about it.)
+3. The launcher asks for your disc: choose your .cue file. It checks that
+   it is the original USA disc.
+4. Controls: Settings -> Input. Your gamepad or keyboard is your player.
+   Then PLAY.
 
 Nothing needs to be set in Mods. Out of the box:
 - Quick start: the game opens on its main menu (English; other languages
@@ -16,18 +30,32 @@ Nothing needs to be set in Mods. Out of the box:
   PLAYERS menu); no long intro, short loading screens.
 - Own view: in a match, every PC shows its own player full screen.
 - Third player: Daffy Duck joins when a third player is there (three
-  seated in a LAN room). With two players he stays away.
+  seated in a LAN room; on one PC, once Player 3 presses a button, from
+  the next level start). With two players he stays away.
 
-Playing together (LAN or Radmin VPN): see PLAYING_TOGETHER.md. In short:
+PLAYING TOGETHER (over the internet with Radmin VPN, or on a home LAN)
+Details: PLAYING_TOGETHER.md. In short:
+- Everyone uses this same ZIP. Over the internet everyone installs Radmin
+  VPN and joins the same Radmin network.
 - Host: NETPLAY -> LAN / Direct IP -> Host Lobby -> Create Lobby.
-  Guests: NETPLAY -> LAN / Direct IP -> Join Direct with the host's IP.
+  Guests: NETPLAY -> LAN / Direct IP -> Join Direct with the host's Radmin
+  IP (26.x.x.x) and port 7777.
+- When Windows Defender Firewall asks about the game: tick both "Private"
+  and "Public" networks, then "Allow access". Without this the others
+  cannot reach the host.
 - The host presses PLAY when everyone is seated (two or three players).
 - In the game: NEW GAME -> START GAME. Seat 1 is Bugs, seat 2 Taz, seat 3
   Daffy.
 
-Saves: a match is played on the host's memory card, so the host keeps the
+SAVES
+A match is played on the host's memory card, so the host keeps the
 campaign. Each guest also keeps a copy of it (saves/netplay/card1.mcd); to
-continue the same campaign as host later, pick that file for memory card 1
-in the launcher's Memory Card panel (Browse).
+continue the same campaign as host later, first copy that file to a new
+name (e.g. saves/campaign.mcd), then pick the copy for memory card 1 in the
+launcher's Memory Card panel (Browse). Not the file itself: the next match
+you join as a guest writes the host's card into it.
 
-Keep your saves/ folder and settings when updating the application.
+Your settings and saves are in this folder. When updating to a new
+version, extract it to a new folder and copy your saves/ folder (and
+keybinds.ini, if you changed keys) into it; the launcher asks for the disc
+once more.

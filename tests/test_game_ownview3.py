@@ -89,6 +89,15 @@ def hit(c, actor: int, damage: int = 6) -> None:
     c.write_u32(actor + 0x24, c.u32(actor + 0x24) | 0x40000000)
 
 
+def team_state(c, bugs: int, taz: int, clone: int) -> str:
+    """One line of the team's state, for a failure message."""
+    def hero(a: int) -> str:
+        return f"hp {c.s16(a + 0x3C)} death {int(bool(c.u32(a + 0x20) & DEATH))} +0x24 {c.u32(a + 0x24):08X}"
+    return (f"frame {c.frame()} down {c.u8(HERO_DOWN):#04x} lives {c.u8(LIVES)}; "
+            f"Bugs {hero(bugs)}; Taz {hero(taz)}; third {hero(clone)} "
+            f"out {int(bool(c.u16(clone + 0x6E) & CLIP_PASVISIBLE))}")
+
+
 def listed(c) -> list[int]:
     """View 0's update / draw list (0x800970FC[0], 0-terminated). The actor
     pass starts a list by writing 0, so a read can land on an empty one:
@@ -333,7 +342,13 @@ class ThreeViews(unittest.TestCase):
         self.assertTrue(c.wait_until(lambda: c.u8(HERO_DOWN) & 0x01, 600, 5), "Bugs did not go out")
         self.assertTrue(c.u16(clone + 0x6E) & CLIP_PASVISIBLE, "the third actor came back too early")
         hit(c, taz)
-        self.assertTrue(c.wait_until(lambda: c.u8(LIVES) == lives - 1, 900, 5), "no team respawn")
+        # Two separate checks, so a failure says whether Taz went down at all
+        # (full-suite failures 2026-11-08 / -09, passes alone: BUGS #44).
+        # Taz dying (0x20) or out (0x02), or the respawn already done
+        self.assertTrue(c.wait_until(lambda: c.u8(HERO_DOWN) & 0x22 or c.u8(LIVES) != lives, 600, 1),
+                        "Taz did not go down: " + team_state(c, bugs, taz, clone))
+        self.assertTrue(c.wait_until(lambda: c.u8(LIVES) == lives - 1, 900, 5),
+                        "no team respawn: " + team_state(c, bugs, taz, clone))
         self.assertTrue(c.wait_until(lambda: not c.u16(clone + 0x6E) & CLIP_PASVISIBLE, 60, 1),
                         "the third actor did not come back")
         c.wait_frames(60)
@@ -355,6 +370,7 @@ class ThreeViews(unittest.TestCase):
         record's +0xBC. The game resets camera 0 (player 1's); with views of
         their own it must be the view that follows the faller (Taz: view 1)."""
         self.need("three views")
+        self.need("third back")             # test_6 leaves the team playing again
         c, p = self.c, self.p
         taz = p.actor(2)
         self.assertEqual(c.u32(FOLLOWED + 4), taz)

@@ -29,6 +29,13 @@ from .game import state_toml
 
 DIGEST = re.compile(r"rb live dig \S+ sim=(\d+) core=(\w+) cpu=\w+ clk=\w+ tim=\w+ "
                     r"ram=(\w+) dirty=\w+ mod=(\w+) av=(\w+)")
+# A rollback (the runtime's "rb begin epoch=.. load=N" / "rb follow epoch=..
+# load=N", psx_netplay_rb.c; REFUSED, NACK and COOLDOWN lines replay
+# nothing) replays from tick N: digests a
+# peer logged for ticks >= N came from predicted input, so they are dropped
+# unless the replay logs them again (the Fighting Force session's finding:
+# kept, they show as false mismatches under lag).
+ROLLBACK = re.compile(r"rb (?:begin|follow) epoch=\d+ .*?load=(\d+)")
 CONTENT_DIFFERS = "LAN content differs between peers"
 
 
@@ -45,13 +52,20 @@ def free_tcp_port() -> int:
 
 
 def digests(log: Path) -> dict[int, tuple[str, str, str, str]]:
-    """sim tick -> (core, ram, mod, av) digests a peer logged."""
+    """sim tick -> (core, ram, mod, av) digests a peer logged for ticks that
+    stayed final (see ROLLBACK)."""
     out = {}
     if log.is_file():
         for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
             m = DIGEST.search(line)
             if m:
                 out[int(m.group(1))] = m.groups()[1:]
+                continue
+            r = ROLLBACK.search(line)
+            if r:
+                load = int(r.group(1))
+                for tick in [t for t in out if t >= load]:
+                    del out[tick]
     return out
 
 

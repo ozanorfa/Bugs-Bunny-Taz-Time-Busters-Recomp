@@ -4,7 +4,11 @@
 # contains no game data.
 format_version = 11
 id = "bbt.third-character"
-version = "0.1.0"
+version = "0.2.0"
+# 0.<N>.0: N is the netplay compatibility number every bbt.* package shares
+# (and VERSION). Bump it in all of them on any change to simulation
+# behaviour: a LAN guest without the host's version is refused, so two
+# different builds cannot start a match (NOTES.md "Netplay compatibility").
 name = "Third Character (in development)"
 author = "BugsBunnyTazRecomp project"
 description = "Daffy Duck as a third player next to Bugs and Taz in 2-player mode, plus the older tests that turn Taz into another in-game character."
@@ -61,7 +65,7 @@ label = "65%"
 [[feature]]
 id = "p3"
 name = "Third player: Daffy Duck"
-description = "In 2-player mode, every level with Taz gets a third hero next to him, played from seat 3: a third controller, or the third PC in a LAN room. Character: Daffy Duck (the default; his model is read from your own disc, LEVEL1/RETRY.BZZ, and Bugs' animations are fitted to his skeleton when the game starts) or the hunched enemy from the Transylvania level (LEVEL5/TRCA01.BZZ). He has his own health panel, and enemies go for him too. His textures are at half vertical resolution. Needs the 3-player configuration (5 controller seats, multitap on port 2). He appears only when there is a third player: in a LAN room when three are seated, on one PC when Player 3 has a controller in Settings -> Input. Do not combine with \"Taz becomes the Transylvania enemy\" or the swap test."
+description = "In 2-player mode, every level with Taz gets a third hero next to him, played from seat 3: a third controller, or the third PC in a LAN room. Character: Daffy Duck (the default; his model is read from your own disc, LEVEL1/RETRY.BZZ, and Bugs' animations are fitted to his skeleton when the game starts) or the hunched enemy from the Transylvania level (LEVEL5/TRCA01.BZZ). He has his own health panel, and enemies go for him too. His textures are at half vertical resolution. Needs the 3-player configuration (5 controller seats, multitap on port 2). He appears only when there is a third player: in a LAN room when three are seated; on one PC once Player 3 (a controller set in Settings -> Input) presses any button, from the next level start (press before START GAME to have him in the first level). Do not combine with \"Taz becomes the Transylvania enemy\" or the swap test."
 group = "Third character (in development)"
 default_enabled = true
 

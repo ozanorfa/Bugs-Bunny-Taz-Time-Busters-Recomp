@@ -15,7 +15,10 @@ Usage (repository root):  python3 tests/soak_level_tour.py [first last]
 from __future__ import annotations
 
 import json
+import os
 import random
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -67,6 +70,10 @@ def random_play(g, frames: int, rng: random.Random) -> None:
 
 def main(argv: list[str]) -> int:
     first, last = (int(argv[0]), int(argv[1])) if len(argv) >= 2 else (4, 70)
+    # macOS: no sleep during the tour (a sleeping Mac stalls the run)
+    tool = shutil.which("caffeinate")
+    if tool:
+        subprocess.Popen([tool, "-d", "-i", "-w", str(os.getpid())])
     out = config.out_dir() / "soak_tour"
     out.mkdir(parents=True, exist_ok=True)
     toml = three_player_toml(config.game_toml(), out / "game_3p.toml")

@@ -66,6 +66,11 @@ guest_cycle_scale_gate = [
 
 [controller]
 default_mode = "digital"
+# Player 1 = the first connected gamepad, and the keyboard keys work too
+# (the runtime merges each seat's keyboard binds into its device). On every
+# PC in a match the local player is player 1. A player's own settings.toml
+# (Settings -> Input) overrides it.
+p1_device = "auto"
 
 # Online mount gate: digests + track count + optional TOC fingerprint
 # (see docs/NETPLAY.md).

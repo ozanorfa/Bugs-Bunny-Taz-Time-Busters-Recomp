@@ -16,7 +16,7 @@ game. The framework checks some of it, not all:
 
 | Must match | Checked by the framework? | How to compare |
 |---|---|---|
-| This repo's commit (our mod code) | **No** (our packages keep version 0.1.0) | `git log -1 --oneline` |
+| This repo's commit (our mod code) | Through the mod packages' version (the netplay compatibility number, raised on every simulation change; a guest without the host's version is refused) | `git log -1 --oneline` |
 | Framework and launcher commits | Yes (execution identity) | `git submodule status` |
 | Execution identity | Yes, before the first frame | `"identity"` in `build-release-net\BugsBunnyTaz_Recompiled.execution.json` |
 | Build options | Partly | use the exact commands below |
@@ -128,7 +128,7 @@ Select-String '"identity"' build-release-net\BugsBunnyTaz_Recompiled.execution.j
 
 First start: run `build-release-net\BugsBunnyTaz_Recompiled.exe`. The
 launcher asks for the disc: pick `C:\RecompDev\disc\BugsBunnyTaz_TimeBusters_USA.cue`.
-In Settings -> Controls, set Player 1 to the controller this PC's player
+In Settings -> Input, set Player 1 to the controller this PC's player
 uses. Try a short offline game first (boot, title, Granwich).
 
 ## 5. Radmin VPN
@@ -220,26 +220,43 @@ disc, builds a Release with this repo's `packaging/release.toml` (the
 3-player config, netplay, 5 seats), then checks and verifies the result:
 
 - `dist\BugsBunnyTazRecomp-v<VERSION>-windows-x64.zip` (`VERSION` is the
-  file in the repo root, now 0.1.0)
+  file in the repo root, now 0.2.0); inside it one folder,
+  `BugsBunnyTaz_Recompiled\` (`packaging/release.toml` `zip_folder`), with
+  the exe, `START_HERE.txt` and `PLAYING_TOGETHER.md`
 - a `.sha256` file next to it
 
 **The ZIP is what every player gets.** It holds no disc, BIOS dump, saves or
 settings; the packager refuses a package with any of them. Every player
 needs their own disc dump with the MD5 of section 3.
 
-Every player must run the same ZIP. A ZIP built from another commit
-differs in our mod code, and the match then drifts apart (the table at
-the top). Before building a new ZIP, raise `VERSION`, so players can see
-which one they have.
+What a player meets (all in `START_HERE.txt`): extract the ZIP first (an
+exe started from inside a ZIP runs from a temp folder without its data);
+the exe is statically linked (the packager fails if it imports a DLL that
+is not part of Windows), so nothing else is installed; it is not signed
+(signing only with `WINDOWS_SIGN_PFX`), so Windows SmartScreen asks once
+("More info" -> "Run anyway"); the first start asks for the disc; the
+host's first room makes Windows Defender Firewall ask (allow Private and
+Public). Settings, keys and saves are written next to the exe, so the
+folder must be writable (not Program Files). Folders with non-ASCII names
+(a Turkish user name, `OneDrive\Masaüstü`) rely on the exe's UTF-8
+manifest (`psxrecomp/assets/windows/psxrecomp.manifest`, Windows 10 1903
+and later); not tried on Windows yet.
+
+Every player must run the same ZIP. Our mod packages and `VERSION` carry
+one netplay compatibility number (0.<N>.0): a guest whose packages are
+another version is refused by the room ("... is not installed"), so two
+different builds cannot start a match. Raise N in `VERSION` and every
+`mods/preloaded/packages/bbt.*` manifest (and its folder) whenever a
+change alters what the game does (python-unit checks they agree).
 
 ## Known limits
 
 - Three players over three PCs: the launcher's room takes its seat count
-  from the `--game` config's `players`. Start every PC with the tracked
-  3-player config, `game_3p.toml` (generated from `game.toml` by
-  `tools/make_3p_toml.py`; the release package ships it as its
-  `game.toml`): `BugsBunnyTaz_Recompiled --game game_3p.toml`. Then the
-  room has three seats. Verified with three launchers on one machine
+  from the config's `players`. The release package ships the 3-player
+  config (`game_3p.toml`, generated from `game.toml` by
+  `tools/make_3p_toml.py`) as its `game.toml`, and a local 5-seat build
+  opens its staged `game_3p.toml` without `--game`, so the room has three
+  seats. Verified with three launchers on one machine
   (`tests/test_game_lanroom.py` `test_three_pcs_in_one_room`); not yet on
   three real PCs. The player-facing steps are in `docs/PLAYING_TOGETHER.md`.
 - The shareable package (section 8) has not been built yet; the

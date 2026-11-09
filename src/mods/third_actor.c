@@ -64,7 +64,7 @@
  *
  * When it appears (option "appear", default "auto"): only with a third
  * player: in netplay when seat 2 is occupied, offline when seat 2 has a
- * controller (Settings -> Input, Player 3). "always" spawns it anyway (the
+ * controller (Settings -> Input, Player 3) and has pressed a button. "always" spawns it anyway (the
  * tests drive seat 2 through the debug command).
  *
  * Daffy (option "character" = daffy): his attack is drawn (draw_pass_wrap)
@@ -175,7 +175,8 @@
 #define ST_REF_OFF   0x3Cu    /* tests only (debug command "ref-third off"): scripts never pick the clone */
 #define ST_HIT       0x40u    /* the clone's own hit counter (Taz's is 0x8008DA0D) */
 #define ST_PREV_ANIM 0x44u    /* the clone's animation id after its last update (Daffy's attack sound) */
-#define ST_LAST      ST_PREV_ANIM
+#define ST_P3_JOINED 0x48u    /* one PC: seat 2 has pressed a button (the third player joined) */
+#define ST_LAST      ST_P3_JOINED
 #define STATE_MAGIC  0x33544242u
 
 
@@ -765,7 +766,13 @@ int bbt_p3_out(void)
 /* Is there a third player? In netplay: seat 2 is occupied (the session's
  * seats are the same on every peer). Offline: seat 2 has a controller
  * (Player 3 is not "none" in Settings -> Input; a build or config with two
- * seats has no seat 2). */
+ * seats has no seat 2) AND has joined: pressed a button at least once in
+ * this run (ST_P3_JOINED). A device setting alone is not a player: a seat
+ * set to "gamepad" counts as connected even with no pad plugged in, so a
+ * player who once set Player 3 up got an idle Daffy in every 2-player game
+ * (pointed out by the Fighting Force session, which drops players in with
+ * X). The game checks at a level's first actor pass, so a join during a
+ * level takes effect at the next level. */
 static int third_player_present(void)
 {
     if (g_appear_always)
@@ -777,7 +784,7 @@ static int third_player_present(void)
             seats |= 1u << me;
         return (seats & (1u << P3_SEAT_INDEX)) != 0;
     }
-    return sio_get_pad_connected(P3_SEAT_INDEX);
+    return sio_get_pad_connected(P3_SEAT_INDEX) && st_get(ST_P3_JOINED);
 }
 
 /* Wrap of the actor pass FUN_80013030(list, ...). */
@@ -792,6 +799,15 @@ static int actor_pass_wrap(CPUState* cpu)
         for (uint32_t f = 0; f <= ST_LAST; f += 4)
             st_set(f, 0);
         st_set(ST_MAGIC, STATE_MAGIC);
+    }
+    /* one PC: the third player joins with any button on seat 2 (its input
+     * record, +0x02 held buttons, refreshed every pad poll) */
+    if (!psx_netplay_active() && !st_get(ST_P3_JOINED)) {
+        const uint32_t rec = bbt_p3_record();
+        if (rec && psx_mod_read_half(rec + 0x02u) != 0) {
+            st_set(ST_P3_JOINED, 1);
+            count("p3_joined", 1);
+        }
     }
     uint32_t a = st_get(ST_ACTOR);
     /* Still ours? After a level load the pool slot may hold one of the new

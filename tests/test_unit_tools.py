@@ -383,6 +383,18 @@ class NetHelpers(unittest.TestCase):
                 32: ("62c266f1", "5c41366b", "00000000", "35f9278a"),
                 64: ("00000001", "5c41366b", "00000000", "35f9278a")})
             self.assertEqual(net.digests(Path(d) / "missing.log"), {})
+            # a rollback from tick 64 drops 64 and later until replayed; a
+            # refused one drops nothing
+            at = lambda n, core: self.LINE.replace("sim=32", f"sim={n}").replace("core=62c266f1", f"core={core}")
+            log.write_text("\n".join([
+                at(32, "00000032"), at(64, "0000bad0"), at(96, "0000bad1"),
+                "psxrecomp: rb begin epoch=3 load=64 frontier=100",
+                at(64, "00000064"),
+                "psxrecomp: rb follow REFUSED epoch=4 load=32 — reason",
+                "psxrecomp: rb follow NACK epoch=5 load=32 frontier=90",
+            ]) + "\n")
+            self.assertEqual({k: v[0] for k, v in net.digests(log).items()},
+                             {32: "00000032", 64: "00000064"})
 
     def test_peer_folder_has_its_own_mods(self):
         from bbt import net
@@ -402,6 +414,30 @@ class NetHelpers(unittest.TestCase):
             self.assertTrue((link.parent / "mods" / "bundled" / "pkg" / "manifest.toml").is_file())
             self.assertIn('id = "trca01"', (link.parent / "mods" / "state.toml").read_text())
             self.assertEqual((build / "mods" / "state.toml").read_text(), "the player's selection\n")
+
+
+class NetplayCompatibility(unittest.TestCase):
+    """Every bbt.* package and VERSION carry one netplay compatibility
+    number (0.<N>.0): a LAN guest without the host's package version is
+    refused, which is what keeps two different builds out of one match
+    (NOTES.md "Netplay compatibility")."""
+
+    def test_one_version_everywhere(self):
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            self.skipTest("tomllib needs Python 3.11")
+        root = config.PROJECT
+        version = (root / "VERSION").read_text(encoding="utf-8").strip()
+        manifests = sorted((root / "mods" / "preloaded" / "packages").glob("bbt.*/*/manifest.toml"))
+        self.assertGreaterEqual(len(manifests), 4)
+        for m in manifests:
+            with self.subTest(package=m.parent.parent.name):
+                data = tomllib.loads(m.read_text(encoding="utf-8"))
+                self.assertEqual(data["version"], m.parent.name, "folder and version differ")
+                self.assertEqual(data["version"], version, "not the shared compatibility number")
+        self.assertEqual(len({m.parent.parent.name for m in manifests}), len(manifests),
+                         "a package has two version folders")
 
 
 class ThreePlayerConfig(unittest.TestCase):

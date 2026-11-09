@@ -9,12 +9,25 @@ desync is reported, no own-view draw hit the watchdog, each peer draws only
 its own seat's view; at the end the machine digests of all three agree
 over the whole match. Results: build-tests/out/soak_net/report.json.
 
-Usage (repository root):  python3 tests/soak_netplay.py [minutes]
+Link: --lag MS (one-way delay added on every peer, the framework's link
+simulator RNET_SIM_LATENCY_MS; both peers add theirs, so the round trip
+grows by about 2x), --jitter MS (+/-, RNET_SIM_JITTER_MS) and --loss PCT
+(dropped datagrams, RNET_SIM_LOSS_PCT), so rollback resimulates our hooks;
+the report counts each peer's rollbacks. Digests of ticks a rollback
+replayed are compared only as replayed (tests/bbt/net.py ROLLBACK). On
+macOS the Mac is kept awake for the run (caffeinate).
+
+Usage (repository root):
+  python3 tests/soak_netplay.py [minutes] [--lag 40 --jitter 10 --loss 3]
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import random
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,15 +49,40 @@ class _Run:
         self.client = client
 
 
+def keep_awake():
+    """macOS: keep the display and the system awake while this process runs
+    (a sleeping Mac stretched a long run over the night in the Fighting Force
+    session)."""
+    tool = shutil.which("caffeinate")
+    return subprocess.Popen([tool, "-d", "-i", "-w", str(os.getpid())]) if tool else None
+
+
+def rollbacks(log: Path) -> int:
+    text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+    return sum(1 for line in text.splitlines() if "rb begin epoch=" in line or "rb follow epoch=" in line)
+
+
 def main(argv: list[str]) -> int:
-    minutes = int(argv[0]) if argv else 10
+    ap = argparse.ArgumentParser()
+    ap.add_argument("minutes", nargs="?", type=int, default=10)
+    ap.add_argument("--lag", type=int, default=0)
+    ap.add_argument("--jitter", type=int, default=0)
+    ap.add_argument("--loss", type=int, default=0)
+    a = ap.parse_args(argv)
+    minutes = a.minutes
     out = config.out_dir() / "soak_net"
     out.mkdir(parents=True, exist_ok=True)
     toml = three_player_toml(config.game_toml(), out / "game_3p.toml")
     rng = random.Random(8112026)
-    report = {"minutes": minutes, "checks": []}
+    env = dict(SMALL_GL)
+    if a.lag:
+        env.update(RNET_SIM_LATENCY_MS=str(a.lag), RNET_SIM_JITTER_MS=str(a.jitter), RNET_SIM_SEED="8112026")
+    if a.loss:
+        env["RNET_SIM_LOSS_PCT"] = str(a.loss)
+    report = {"minutes": minutes, "lag_ms": a.lag, "jitter_ms": a.jitter, "loss_pct": a.loss, "checks": []}
+    awake = keep_awake()
     with NetMatch(config.net_build(), "soak_net/match", [FEATS] * 3, toml=toml, window=True,
-                  env=SMALL_GL) as m:
+                  env=env) as m:
         host = m.peers[0]
         c, p = host.client, Player(_Run(host.client))
         assert c.wait_until(lambda: p.level() == 2, 6000, 2), "no language screen"
@@ -83,11 +121,15 @@ def main(argv: list[str]) -> int:
             print(json.dumps(row), flush=True)
             (out / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     compared, bad = m.compare_digests()
-    report.update(compared=compared, digest_mismatches=bad[:20], loaded_at=loaded_at)
+    report.update(compared=compared, digest_mismatches=bad[:20], loaded_at=loaded_at,
+                  rollbacks=[rollbacks(pe.log_path) for pe in m.peers])
+    if awake:
+        awake.terminate()
     (out / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     problems = [pr for row in report["checks"] for pr in row["peers"]
                 if pr["desync"] or pr["watchdog"] or pr["other_views"]]
-    print(f"\n{compared} ticks compared, {len(bad)} differ; {len(problems)} peer problems", flush=True)
+    print(f"\n{compared} ticks compared, {len(bad)} differ; {len(problems)} peer problems; "
+          f"rollbacks per peer {report['rollbacks']}", flush=True)
     return 1 if bad or problems else 0
 
 
