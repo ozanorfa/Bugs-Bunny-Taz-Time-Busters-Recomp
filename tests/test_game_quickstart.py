@@ -16,6 +16,14 @@ closes. A level change takes far less than the original loading screen
 470 frames on a stock load, ~166 with the iris shortened and 2x CD speed),
 the CD speed is the default 2x, and the level loads with both players.
 With "skip_logos" off, the logos are shown as before.
+The menus (options language, skip_title, auto_players; their defaults):
+the language screen is never loaded (the chosen language is in
+0x80010093), the main menu is up without PRESS START; on one PC with pad
+2 in, NEW GAME shows the game's ONE / TWO PLAYERS page (the players'
+choice); without pad 2 it goes straight to START GAME with one player
+and △ there goes back to the main menu; START GAME reaches Granwich in
+that mode (NOTES.md "Straight into the game"). A LAN room skips the page
+(test_game_lanroom.py).
 Screenshots go to build-tests/out/quickstart*/."""
 from __future__ import annotations
 
@@ -26,7 +34,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
 from bbt.client import pad  # noqa: E402
-from bbt.game import LEVEL_EXIT, LEVEL_GRANNY, LEVEL_ID, LEVEL_LANGUAGE, LEVEL_VICA01, TYPE_BUGS, TYPE_TAZ  # noqa: E402
+from bbt.game import (LEVEL_EXIT, LEVEL_GRANNY, LEVEL_ID, LEVEL_LANGUAGE, LEVEL_TITLE, LEVEL_VICA01,  # noqa: E402
+                      TYPE_BUGS, TYPE_TAZ, Player)
 from test_game_stock import moved, start_run  # noqa: E402
 
 Q = "bbt.quick-start."
@@ -174,6 +183,111 @@ class QuickStartLogosOn(unittest.TestCase):
         self.assertEqual([lv for lv in seen if lv in LOGO_LEVELS], list(LOGO_LEVELS))
         self.assertGreater(c.frame(), STOCK_LANGUAGE_FRAME - 100)
         self.assertNotIn(Q + "logos_skipped", c.counters())
+
+
+LANGUAGE = 0x80010093            # 0 English, 1 French, 3 Spanish
+MENUS = {"language": "english", "skip_title": "true", "auto_players": "true"}   # the defaults
+
+
+class QuickStartMenus(unittest.TestCase):
+    """The main menu at once; pad 2 in: the game asks ONE / TWO PLAYERS."""
+
+    @classmethod
+    def setUpClass(cls):
+        start_run(cls, config.game_build(), "quickstart-menus", quick_start(**MENUS))
+        cls.reached = set()
+
+    def need(self, stage: str) -> None:
+        if stage not in self.reached:
+            self.skipTest(f"an earlier stage ({stage}) failed")
+
+    def q(self) -> dict:
+        return {k[len(Q):]: v for k, v in self.c.counters().items() if k.startswith(Q)}
+
+    def test_1_main_menu_at_once(self):
+        c, p = self.c, self.p
+        seen = []
+
+        def at_menu() -> bool:
+            if p.level() not in seen:
+                seen.append(p.level())
+            return p.level() == LEVEL_TITLE and p.menu_page() == Player.PAGE_MAIN
+        self.assertTrue(c.wait_until(at_menu, 3000, 2), f"level {p.level()} page {p.menu_page()}")
+        self.assertNotIn(LEVEL_LANGUAGE, seen, "the language screen was loaded")
+        self.assertLess(c.frame(), 900)
+        self.assertEqual(c.u8(LANGUAGE), 0)
+        self.assertEqual((self.q().get("language_skipped"), self.q().get("title_skipped")), (1, 1))
+        self.game.shot("1_main_menu")
+        self.reached.add("menu")
+
+    def test_2_with_pad_2_the_game_asks(self):
+        self.need("menu")
+        c, p = self.c, self.p
+        c.wait_frames(60)
+        c.release(port=2); c.wait_frames(30)              # pad 2 in
+        c.press(pad("cross"))                             # NEW GAME
+        self.assertTrue(c.wait_until(lambda: p.menu_page() == Player.PAGE_PLAYERS, 300, 1),
+                        f"page {p.menu_page()}")
+        self.assertEqual(self.q().get("players_asked"), 1)
+        self.game.shot("2_players_asked")
+        c.wait_frames(30)
+        c.press(pad("down")); c.wait_frames(30)
+        c.press(pad("cross"))                             # TWO PLAYERS
+        self.assertTrue(c.wait_until(lambda: p.menu_page() == Player.PAGE_START, 300, 1),
+                        f"page {p.menu_page()}")
+        self.assertTrue(p.two_player_mode())
+        c.wait_frames(30)
+        c.press(pad("triangle"))                          # back: the game's own way
+        self.assertTrue(c.wait_until(lambda: p.menu_page() == Player.PAGE_PLAYERS, 300, 1),
+                        f"page {p.menu_page()}")
+        c.wait_frames(30)
+        c.press(pad("triangle"))
+        self.assertTrue(c.wait_until(lambda: p.menu_page() == Player.PAGE_MAIN, 300, 1),
+                        f"page {p.menu_page()}")
+        self.assertEqual((self.q().get("players_two", 0), self.q().get("players_back", 0)), (0, 0))
+        self.reached.add("start")
+
+    def test_3_start_game_reaches_granwich_with_two_players(self):
+        self.need("start")
+        p = self.p
+        self.assertTrue(p.straight_to_game(two=True), f"level {p.level()}")
+        self.assertTrue(p.two_player_mode(), "not in 2-player mode")
+        self.assertEqual(self.q().get("players_asked"), 2)
+        self.assertEqual(self.q().get("intro_skipped"), 1)
+        self.game.shot("3_granwich")
+
+
+class QuickStartMenusOnePlayer(unittest.TestCase):
+    """No pad 2: no choice, so NEW GAME goes straight to START GAME with one
+    player (△ goes back to the main menu); and the language option."""
+
+    @classmethod
+    def setUpClass(cls):
+        start_run(cls, config.game_build(), "quickstart-menus-1p",
+                  quick_start(**dict(MENUS, language="french")))
+
+    def test_one_player_in_french(self):
+        c, p = self.c, self.p
+        q = lambda: {k[len(Q):]: v for k, v in c.counters().items() if k.startswith(Q)}
+        self.assertTrue(c.wait_until(lambda: p.level() == LEVEL_TITLE and p.menu_page() == Player.PAGE_MAIN,
+                                     3000, 2), f"level {p.level()} page {p.menu_page()}")
+        c.wait_frames(60)
+        c.press(pad("cross"))                             # NEW GAME
+        self.assertTrue(c.wait_until(lambda: p.menu_page() == Player.PAGE_START, 300, 1),
+                        f"page {p.menu_page()}")
+        self.assertEqual(q().get("players_one"), 1)
+        self.game.shot("start_1p")
+        c.wait_frames(30)
+        c.press(pad("triangle"))                          # back: the main menu
+        self.assertTrue(c.wait_until(lambda: p.menu_page() == Player.PAGE_MAIN, 300, 1),
+                        f"page {p.menu_page()}")
+        self.assertEqual(q().get("players_back"), 1)
+        self.assertTrue(p.straight_to_game(two=False), f"level {p.level()}")
+        self.assertEqual(c.u8(LANGUAGE), 1)
+        self.assertFalse(p.two_player_mode(), "2-player mode without a second pad")
+        self.assertEqual((q().get("players_one"), q().get("players_two", 0), q().get("players_asked", 0)),
+                         (2, 0, 0))
+        self.game.shot("granwich_1p")
 
 
 if __name__ == "__main__":

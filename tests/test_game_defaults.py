@@ -1,6 +1,8 @@
 """Game tier: the mod defaults a player gets with nothing selected
 (2026-11-08), offline in the 5-seat build (build-p3) with the 3-player
-config: Quick start on (logos and the new-game intro skipped), the own view
+config: Quick start on (logos, the language screen, PRESS START and the
+new-game intro skipped; with pad 2 in on one PC the game asks ONE / TWO
+PLAYERS), the own view
 on but keeping the game's shared screen on one PC (one view in a 2-player
 level), and the third player on but not appearing without a third player
 (this test process gives seat 2 no controller). A LAN room with the same
@@ -32,11 +34,11 @@ class Defaults(unittest.TestCase):
 
     def test_1_nothing_selected(self):
         c, p = self.c, self.p
-        self.assertTrue(p.boot_to_language_select(), "no language screen")
+        self.assertTrue(p.straight_to_game(two=True), f"no 2-player Granwich (level {p.level()})")
+        self.assertTrue(p.two_player_mode())
         k = c.counters()
-        self.assertEqual(k.get(Q + "logos_skipped"), 1, "Quick start is not on by default")
-        self.assertTrue(p.language_to_title(), "no title")
-        self.assertTrue(p.title_to_two_player_game(), "no 2-player Granwich")
+        self.assertEqual([k.get(Q + n) for n in ("logos_skipped", "language_skipped", "title_skipped",
+                                                  "players_asked")], [1, 1, 1, 1], "Quick start's defaults")
         for _ in range(8):                                 # the opening dialogs
             c.press(pad("cross")); c.wait_frames(150)
         c.wait_frames(120)

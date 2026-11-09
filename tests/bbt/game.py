@@ -72,9 +72,14 @@ DEFAULT_PACKAGE = "bbt.third-character"
 # tests of the defaults themselves).
 DEFAULT_ON = ("p3", "bbt.own-view/two-views", "bbt.quick-start/quick-start")
 # Options whose default changed with that, kept as the tests were written:
-# the third player appears only with one ("auto") and the own view keeps the
-# shared screen on one PC ("shared"). A test that names the option wins.
-TEST_OPTIONS = {"p3": {"appear": "always"}, "bbt.own-view/two-views": {"offline": "split"}}
+# the third player appears only with one ("auto"), the own view keeps the
+# shared screen on one PC ("shared"), and Quick start goes straight to the
+# main menu with the players from the controllers (the tests walk the
+# language screen, PRESS START and the ONE / TWO PLAYERS menu themselves).
+# A test that names the option wins.
+TEST_OPTIONS = {"p3": {"appear": "always"}, "bbt.own-view/two-views": {"offline": "split"},
+                "bbt.quick-start/quick-start": {"language": "ask", "skip_title": "false",
+                                                "auto_players": "false"}}
 
 
 def state_toml(features: dict) -> str:
@@ -351,6 +356,48 @@ class Player:
         c.press(pad("cross")); c.wait_frames(300)         # START GAME
         c.press(pad("cross")); c.wait_frames(120)
         c.press(pad("select"))                            # skip the intro
+        if not c.wait_until(lambda: self.level() == LEVEL_GRANNY, 2400, 10):
+            return False
+        return bool(c.wait_until(self.players_ready, 1200, 10))
+
+    MENU_IDENTITY = 225                                  # the title level's menu actor
+    PAGE_MAIN, PAGE_PLAYERS, PAGE_START = 0x0102, 0x0103, 0x0104
+
+    def menu_page(self) -> int | None:
+        """The title menu's page (its behaviour state id), None outside it."""
+        p, n = self.c.u32(0x8008DDCC), 0
+        while 0x80000000 <= p < 0x80200000 and n < 300:
+            if self.c.u16(p + 0x34) == self.MENU_IDENTITY:
+                node = self.c.u32(p + 0x178)
+                return self.c.u16(node + 4) if 0x80000000 <= node < 0x80200000 else None
+            p = self.c.u32(p); n += 1
+        return None
+
+    def straight_to_game(self, two: bool = True) -> bool:
+        """Quick start's menus (language, skip_title, auto_players): the
+        main menu comes up by itself; NEW GAME goes to START GAME, or, on
+        one PC with pad 2 in, to the game's ONE / TWO PLAYERS page (then
+        ONE or TWO PLAYERS is chosen here); START GAME to Granwich."""
+        c = self.c
+        if not c.wait_until(lambda: self.level() == LEVEL_TITLE and self.menu_page() == self.PAGE_MAIN,
+                            3000, 2):
+            return False
+        c.wait_frames(60)
+        if two:
+            c.release(port=2); c.wait_frames(30)         # plug in pad 2
+        c.press(pad("cross"))                             # NEW GAME
+        if not c.wait_until(lambda: self.menu_page() in (self.PAGE_PLAYERS, self.PAGE_START), 300, 1):
+            return False
+        if self.menu_page() == self.PAGE_PLAYERS:          # asked: one PC, pad 2 in
+            c.wait_frames(30)
+            # the page keeps its cursor (script variable 0x7F, 1 = TWO PLAYERS)
+            if bool(c.u8(0x80093950 + 0x7F)) != two:
+                c.press(pad("down")); c.wait_frames(30)
+            c.press(pad("cross"))                         # ONE / TWO PLAYERS
+            if not c.wait_until(lambda: self.menu_page() == self.PAGE_START, 300, 1):
+                return False
+        c.wait_frames(30)
+        c.press(pad("cross"))                             # START GAME
         if not c.wait_until(lambda: self.level() == LEVEL_GRANNY, 2400, 10):
             return False
         return bool(c.wait_until(self.players_ready, 1200, 10))

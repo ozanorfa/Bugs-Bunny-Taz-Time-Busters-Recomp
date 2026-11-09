@@ -273,7 +273,8 @@ class GameRunHelpers(unittest.TestCase):
                                         {"id": "bbt.own-view"}])
         qs = [f for f in t["feature"] if f["package_id"] == "bbt.quick-start"]
         self.assertEqual(qs, [{"package_id": "bbt.quick-start", "id": "quick-start", "enabled": True,
-                               "values": {"skip_intro": "false"}}])
+                               "values": {"language": "ask", "skip_title": "false", "auto_players": "false",
+                                          "skip_intro": "false"}}])
         # options the tests were written with; a named option wins
         t = tomllib.loads(game.state_toml({"p3": True, "bbt.own-view/two-views": True}))
         vals = {f["id"]: f.get("values") for f in t["feature"]}

@@ -15,13 +15,50 @@ game_id = "SLUS-01144"
 [[feature]]
 id = "quick-start"
 name = "Quick start"
-description = "Skips the three company logos at power-on (about 16 seconds, they cannot be skipped by a button) and the new-game intro cutscene (about 6 minutes; ✕ also skips it), so NEW GAME -> START GAME goes straight to Granwich. Shortens every loading screen: the closing circle normally takes as long as the original CD drive would need for the level (Granwich about 7 seconds); with this option it closes in a third of a second and the load lasts only as long as the disc reads. CD speed makes those reads faster (2x halves them); 2x, 3x and 4x were tested on every load path tried, 6x and 8x froze the game at the title screen, so 4x is the highest choice. In a netplay match every player needs the same choice."
+description = "Goes straight to the main menu: no language screen (the language is an option) and no PRESS START, and in a LAN room the number of players comes from the seats instead of the ONE / TWO PLAYERS menu (on one PC that menu is shown only when a second controller is set up). Also skips the three company logos at power-on (about 16 seconds, they cannot be skipped by a button) and the new-game intro cutscene (about 6 minutes; ✕ also skips it), so NEW GAME -> START GAME goes straight to Granwich. Shortens every loading screen: the closing circle normally takes as long as the original CD drive would need for the level (Granwich about 7 seconds); with this option it closes in a third of a second and the load lasts only as long as the disc reads. CD speed makes those reads faster (2x halves them); 2x, 3x and 4x were tested on every load path tried, 6x and 8x froze the game at the title screen, so 4x is the highest choice. In a netplay match every player needs the same choice."
 group = "Quality of Life"
 default_enabled = true
 
 [[plugin]]
 feature = "quick-start"
 id = "bbt.quick-start"
+
+[[option]]
+feature = "quick-start"
+id = "language"
+label = "Game language (skips the language screen)"
+type = "choice"
+default = "english"
+
+[[option.choice]]
+value = "english"
+label = "English"
+
+[[option.choice]]
+value = "french"
+label = "Français"
+
+[[option.choice]]
+value = "spanish"
+label = "Español"
+
+[[option.choice]]
+value = "ask"
+label = "Ask (show the language screen)"
+
+[[option]]
+feature = "quick-start"
+id = "skip_title"
+label = "Skip PRESS START"
+type = "boolean"
+default = "true"
+
+[[option]]
+feature = "quick-start"
+id = "auto_players"
+label = "Players from the LAN room (no ONE / TWO PLAYERS menu); on one PC it asks only when a second controller is set up"
+type = "boolean"
+default = "true"
 
 [[option]]
 feature = "quick-start"

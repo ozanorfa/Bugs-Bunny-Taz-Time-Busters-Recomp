@@ -306,23 +306,27 @@ class LanRoom(unittest.TestCase):
             self.assertEqual((s["rollback"], s["players"], s["desync"]), (1, 2, 0), str(s))
         c = self.procs[0][1]
         p = Player(_Run(c))
-        self.assertTrue(c.wait_until(lambda: p.level() == 2, 3000, 2), "no language screen")
-        c.wait_frames(200)
-        self.assertTrue(p.language_to_title(), "no title")
-        c.wait_frames(240); c.press(pad("start")); c.wait_frames(120)
-        c.press(pad("cross")); c.wait_frames(60)          # NEW GAME
-        c.press(pad("down")); c.wait_frames(30)
-        c.press(pad("cross")); c.wait_frames(90)          # TWO PLAYERS
+        # Quick start's menus: the main menu at once, NEW GAME -> START GAME
+        # with two players (the second seat), START GAME -> Granwich
+        self.assertTrue(c.wait_until(lambda: p.level() == 0 and p.menu_page() == Player.PAGE_MAIN, 3000, 2),
+                        "no main menu")
+        c.wait_frames(60)
+        c.press(pad("cross"))                             # NEW GAME
+        self.assertTrue(c.wait_until(lambda: p.menu_page() == Player.PAGE_START, 300, 1), "no START GAME page")
+        self.assertTrue(p.two_player_mode(), "not two players")
+        c.wait_frames(30)
         c.press(pad("cross"))                             # START GAME
         self.assertTrue(c.wait_until(lambda: p.level() == LEVEL_GRANNY and p.players_ready(), 3000, 2),
                         "Granwich did not load")
+        self.assertTrue(p.two_player_mode(), "Granwich not in 2-player mode")
         loaded_at = c.frame()
         for _ in range(8):                                # the opening dialogs
             c.press(pad("cross")); c.wait_frames(150)
         for i, (_, cc, _) in enumerate(self.procs):
             cs = cc.counters()
             with self.subTest(peer=i):
-                self.assertEqual(cs.get(Q + "logos_skipped"), 1, "Quick start is not on")
+                self.assertEqual([cs.get(Q + n) for n in ("logos_skipped", "language_skipped", "title_skipped",
+                                                          "players_two")], [1, 1, 1, 1], "Quick start's menus")
                 self.assertGreaterEqual(cs.get(A3 + "no_third_player", 0), 1, "the third player's rule did not run")
                 self.assertEqual(cs.get(A3 + "spawned", 0), 0, "a third player appeared with two PCs")
                 self.assertGreater(cs.get(V + f"local_view_{i}", 0), 100, "own view not drawn")

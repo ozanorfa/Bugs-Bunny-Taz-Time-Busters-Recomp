@@ -41,8 +41,9 @@ used or touched), and plays from a cold boot like a person would. The
 build's `mods/state.toml` is replaced by the features the test needs and
 put back afterwards (also after an interrupted run). The features on by
 default (Quick start, the own view, the third player) are written as off
-unless the test names them, and a named third player / own view keeps the
-options the tests were written with (appear "always", offline "split"),
+unless the test names them, and a named feature keeps the options the
+tests were written with (third player appear "always", own view offline
+"split", Quick start language "ask", skip_title and auto_players off),
 so each test runs exactly the selection it names (`tests/bbt/game.py`
 `state_toml`; `"_defaults": True` keeps the manifests' defaults). The tests refuse to
 run against `build-release`, which holds your own mod selection
@@ -120,8 +121,16 @@ run against `build-release`, which holds your own mod selection
   is drawn (`spin_drawn`); his moves start only Bugs' sounds (the sound
   slots in the per-frame RAM ring), and with sounds = "quiet" none of
   Taz's or Bugs' (a run of its own).
+- `test_game_quickstart.py` also walks Quick start's menus (its default
+  options): no language screen, the main menu at once; with pad 2 in the
+  game's ONE / TWO PLAYERS page asks (and △ goes back the game's own
+  way); without pad 2 NEW GAME goes straight to START GAME with one
+  player and △ back to the main menu; Granwich in that mode; the French
+  option.
 - `test_game_defaults.py` — nothing selected (the manifests' defaults,
-  offline, 3-player config): Quick start skips the logos and the intro,
+  offline, 3-player config): Quick start goes straight to the main menu
+  (with pad 2 in, the game asks ONE / TWO PLAYERS), skips the logos and
+  the intro,
   the third player does not appear without a controller for seat 3, and
   one PC keeps the game's shared screen.
 - `test_game_net.py` — netplay with our mods (`build-net`): two headless

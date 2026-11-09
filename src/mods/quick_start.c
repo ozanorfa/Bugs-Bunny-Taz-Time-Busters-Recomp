@@ -51,6 +51,37 @@
  *    changes when the game gets its CD interrupts: values above
  *    CD_SPEED_MAX are refused here (8 hung the game at the title load,
  *    NOTES.md "Quick start").
+ *
+ *  - Menus (NOTES.md "Straight into the game"). The language screen is
+ *    level 2; its choice is the byte 0x80010093 (0 English, 1 French,
+ *    3 Spanish: kept by FUN_80011834, clamped by Level_LoadParse); left
+ *    alone it goes on to the title (level 0) by itself. main loads the
+ *    first level after the logos with FUN_8006AEA8(id) (0x80012348).
+ *    "language" (not "ask") is a pre-hook there: level 2 becomes level 0
+ *    with that language. The title level's menu is one actor (identity
+ *    225) whose behaviour states are the pages: 0x0001 PRESS START,
+ *    0x0102 NEW GAME / LOAD GAME / CREDITS, 0x0103 ONE / TWO PLAYERS,
+ *    0x0104 START GAME / OPTIONS. A page's script returns the next page's
+ *    id and FUN_80020B80(actor, id, work) switches to it (FUN_8002EC70);
+ *    TWO PLAYERS runs Mode_Set2Player (0x800510E8) first, ONE PLAYER
+ *    Mode_Set1Player (0x80051094); △ on START GAME goes back to 0x0103.
+ *    "skip_title": a switch that ends on PRESS START (the level load makes
+ *    several) is followed at once by the switch to 0x0102. "auto_players":
+ *    a switch to 0x0103 sets the mode the menu would and goes to 0x0104
+ *    instead; back from 0x0104 goes to 0x0102. In netplay the players are
+ *    the occupied seats (two players with a second seat; the same on every
+ *    peer). On one PC the page is skipped only when there is no choice: no
+ *    controller for Player 2 (the seat the runtime marks connected, which
+ *    is also what makes the game see a pad in port 2, 0x80010094 bit 1,
+ *    the game's condition for TWO PLAYERS) means one player; with one, the
+ *    game's own page asks (user's choice, 2026-11-09: a Player 2 keyboard
+ *    is always "connected"). START GAME
+ *    applies the mode again from the players page's cursor, script
+ *    variable 0x7F (0x80093950 + i are the game's script variables): left
+ *    at 0 it ran Mode_Set1Player (measured). So the skip also leaves the
+ *    variables the page leaves when ONE / TWO PLAYERS is confirmed
+ *    (measured for both: 0x1B = 60, 0x1C = 0x80, 0x1D = 1, 0x76 = 1, and
+ *    0x7F = 1 for TWO).
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -59,6 +90,8 @@
 #include "cpu_state.h"
 #include "func_override.h"
 #include "mod_plugins.h"
+#include "psx_netplay.h"
+#include "sio.h"
 
 #define PACKAGE              "bbt.quick-start"
 #define FEATURE              "quick-start"
@@ -77,9 +110,26 @@
 
 #define CD_SPEED_MAX         4
 
+#define LEVEL_TITLE          0u
 #define LEVEL_LANGUAGE       2u
 #define LEVEL_GRANNY         4u
 #define LEVEL_CCINTRO        0x53u
+
+#define ADDR_LEVEL_LOAD      0x8006AEA8u   /* FUN_8006AEA8(id): main's first level load */
+#define ADDR_LANGUAGE        0x80010093u   /* byte: 0 English, 1 French, 3 Spanish */
+#define ADDR_BEHAVIOUR       0x80020B80u   /* FUN_80020B80(actor, event, work): state switch */
+#define ADDR_MODE_2P         0x800510E8u   /* Mode_Set2Player */
+#define ADDR_MODE_1P         0x80051094u   /* Mode_Set1Player */
+#define A_IDENTITY           0x34u
+#define A_STATES             0x10Cu        /* list of behaviour states: +0 next, +4 u16 id */
+#define A_STATE              0x178u        /* the current state's node */
+#define MENU_IDENTITY        225u          /* the title level's menu actor */
+#define ADDR_SCRIPT_VARS     0x80093950u   /* the game's script variables, one byte each */
+#define VAR_PLAYERS_CURSOR   0x7Fu         /* 1 = TWO PLAYERS (START GAME re-applies the mode from it) */
+#define PAGE_TITLE           0x0001u       /* PRESS START */
+#define PAGE_MAIN            0x0102u       /* NEW GAME / LOAD GAME / CREDITS */
+#define PAGE_PLAYERS         0x0103u       /* ONE PLAYER / TWO PLAYERS */
+#define PAGE_START           0x0104u       /* START GAME / OPTIONS */
 
 #define count(event) psx_mod_counter_add(PLUGIN "." event, 1u)
 
@@ -91,12 +141,23 @@ static const uint32_t kLogosGuard[4] = {
 static const uint32_t kLevelChangeGuard[4] = {
     0x3C035FDEu, 0x3463AB97u, 0x00041100u, 0x00441023u,
 };
+/* addiu sp,sp,-0x20 / sw s0,0x18(sp) / move s0,a0 / sw ra,0x1C(sp) */
+static const uint32_t kLevelLoadGuard[4] = {
+    0x27BDFFE0u, 0xAFB00018u, 0x00808021u, 0xAFBF001Cu,
+};
+/* addiu sp,sp,-0x30 / sw s4,0x20(sp) / move s4,a0 / sw s0,0x10(sp) */
+static const uint32_t kBehaviourGuard[4] = {
+    0x27BDFFD0u, 0xAFB40020u, 0x0080A021u, 0xAFB00010u,
+};
 
 /* Options, read once at activation (part of the committed plan). */
 static int g_skip_logos = 1;
 static int g_skip_intro = 1;
 static int g_short_loading = 1;
 static int g_cd_speed = 1;
+static int g_language = 0;           /* -1: show the language screen */
+static int g_skip_title = 1;
+static int g_auto_players = 1;
 
 static int read_bool_option(const char* option, int fallback)
 {
@@ -111,7 +172,7 @@ static void quick_start_activate(void)
     g_skip_logos = read_bool_option("skip_logos", 1);
     g_skip_intro = read_bool_option("skip_intro", 1);
     g_short_loading = read_bool_option("short_loading", 1);
-    char v[8];
+    char v[16];
     g_cd_speed = 1;
     if (psx_mod_option_value(PACKAGE, FEATURE, "cd_speed", v, sizeof v))
         g_cd_speed = atoi(v);
@@ -119,6 +180,11 @@ static void quick_start_activate(void)
         g_cd_speed = 1;
     if (g_cd_speed > 1 && psx_mod_set_disc_speed((uint32_t)g_cd_speed, 0u))
         psx_mod_counter_add(PLUGIN ".cd_speed", (uint32_t)g_cd_speed);
+    g_language = 0;
+    if (psx_mod_option_value(PACKAGE, FEATURE, "language", v, sizeof v))
+        g_language = strcmp(v, "ask") == 0 ? -1 : strcmp(v, "french") == 0 ? 1 : strcmp(v, "spanish") == 0 ? 3 : 0;
+    g_skip_title = read_bool_option("skip_title", 1);
+    g_auto_players = read_bool_option("auto_players", 1);
 }
 
 /* Replaces FUN_80011A44 (logos) when skip_logos is on. */
@@ -153,8 +219,110 @@ static int level_change_wrap(CPUState* cpu)
     return 1;
 }
 
+/* Pre-hook of FUN_8006AEA8(id): the language screen becomes the title,
+ * in the chosen language. */
+static int level_load_wrap(CPUState* cpu)
+{
+    if (g_language < 0 || cpu->gpr[4] != LEVEL_LANGUAGE)
+        return 0;
+    psx_mod_write_byte(ADDR_LANGUAGE, (uint8_t)g_language);
+    psx_mod_write_word(ADDR_LEVEL_ID, LEVEL_TITLE);
+    cpu->gpr[4] = LEVEL_TITLE;
+    func_override_call_original(cpu);
+    count("language_skipped");
+    return 1;
+}
+
+static int in_ram(uint32_t a)
+{
+    return a >= 0x80000000u && a < 0x80200000u;
+}
+
+static uint16_t page_of(uint32_t actor)
+{
+    const uint32_t node = psx_mod_read_word(actor + A_STATE);
+    return in_ram(node) ? psx_mod_read_half(node + 4u) : 0u;
+}
+
+/* The title level's menu actor: level 0, identity 225, with the START GAME
+ * page among its states. */
+static int title_menu(uint32_t actor)
+{
+    if (!in_ram(actor) || psx_mod_read_word(ADDR_LEVEL_ID) != LEVEL_TITLE ||
+        psx_mod_read_half(actor + A_IDENTITY) != MENU_IDENTITY)
+        return 0;
+    uint32_t node = psx_mod_read_word(actor + A_STATES);
+    for (int i = 0; i < 64 && in_ram(node); ++i, node = psx_mod_read_word(node))
+        if (psx_mod_read_half(node + 4u) == PAGE_START)
+            return 1;
+    return 0;
+}
+
+static int second_player(void)
+{
+    if (psx_netplay_active()) {
+        uint32_t seats = psx_netplay_peer_seats();
+        const int me = psx_netplay_local_slot();
+        if (me >= 0 && me < 32)
+            seats |= 1u << me;
+        return (seats & ~1u) != 0;           /* a seat other than the host's */
+    }
+    return sio_get_pad_connected(1);
+}
+
+/* Wrap of FUN_80020B80(actor, event, work) for the title menu's pages. */
+static int behaviour_wrap(CPUState* cpu)
+{
+    if ((!g_skip_title && !g_auto_players) || !title_menu(cpu->gpr[4]))
+        return 0;
+    const uint32_t actor = cpu->gpr[4], event = cpu->gpr[5];
+    const uint32_t ra = cpu->gpr[31], work = cpu->gpr[6];
+    if (event != PAGE_PLAYERS || !g_auto_players) {
+        if (!g_skip_title)
+            return 0;
+        func_override_call_original(cpu);
+        if (page_of(actor) == PAGE_TITLE) {
+            (void)psx_mod_call_guest(cpu, ADDR_BEHAVIOUR, ra, actor, PAGE_MAIN, work, 0);
+            count("title_skipped");
+        }
+        return 1;
+    }
+    if (!psx_netplay_active() && second_player()) {
+        /* one PC with a second controller: one or two players is the
+         * players' choice, so the game asks (its own page, both ways) */
+        if (page_of(actor) != PAGE_START)
+            count("players_asked");
+        return 0;
+    }
+    if (page_of(actor) == PAGE_START) {
+        cpu->gpr[5] = PAGE_MAIN;             /* back from START GAME */
+        count("players_back");
+    } else {
+        const int two = second_player();
+        (void)psx_mod_call_guest(cpu, two ? ADDR_MODE_2P : ADDR_MODE_1P, ra, 0, 0, 0, 0);
+        static const uint8_t kConfirmed[][2] = {{0x1Bu, 60u}, {0x1Cu, 0x80u}, {0x1Du, 1u}, {0x76u, 1u}};
+        for (unsigned i = 0; i < sizeof kConfirmed / sizeof kConfirmed[0]; ++i)
+            psx_mod_write_byte(ADDR_SCRIPT_VARS + kConfirmed[i][0], kConfirmed[i][1]);
+        psx_mod_write_byte(ADDR_SCRIPT_VARS + VAR_PLAYERS_CURSOR, two ? 1u : 0u);
+        cpu->gpr[4] = actor;
+        cpu->gpr[5] = PAGE_START;
+        cpu->gpr[6] = work;
+        cpu->gpr[31] = ra;
+        if (two)
+            count("players_two");
+        else
+            count("players_one");
+    }
+    func_override_call_original(cpu);
+    return 1;
+}
+
 PSX_MOD_CONSTRUCTOR(register_bbt_quick_start)
 {
+    (void)psx_mod_register_function_override(PLUGIN ":language", ADDR_LEVEL_LOAD, level_load_wrap,
+                                             kLevelLoadGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(PLUGIN ":menus", ADDR_BEHAVIOUR, behaviour_wrap,
+                                             kBehaviourGuard, 4, FO_CREDIT_SELF);
     (void)psx_mod_register_activation_plugin(PLUGIN, quick_start_activate);
     (void)psx_mod_register_function_override(PLUGIN ":logos", ADDR_LOGOS, logos_override,
                                              kLogosGuard, 4, FO_CREDIT_SELF);
