@@ -57,8 +57,8 @@ derived from one may be committed; releases run on the bundled MIT OpenBIOS.
 
 `generated/` (the recompiled game C) is **not** committed in this project:
 it is derived from the disc, so every machine generates its own from its
-own disc copy (`psxrecomp_cli.py generate`, below). The release package
-is built the same way (see "Releases" below).
+own disc copy (`psxrecomp_cli.py generate`, below). So does every player's
+PC from the players' ZIP (see "Releases" below).
 
 Default app icon: `assets/psxrecomp.ico` (and `.png` / `.svg`) — Retro-themed controller mark from `psxrecomp/assets/`. Windows builds embed it via `APP_ICON`.
 
@@ -87,11 +87,12 @@ python3 psxrecomp/psxrecomp_cli.py rebuild \
 
 ### Releases
 
-The players' Windows ZIP is built on a Windows PC with the disc available
-(docs/WINDOWS_AND_LAN.md section 8). It ships the 3-player config with
-netplay (LAN / Direct IP) and five seats (`packaging/release.toml`). Official
-optimized Windows/Linux releases use the maintained shared builder. Commit
-the desired `VERSION`, source and framework pins, then run:
+The players' ZIP holds no game data and no game code: each player's PC
+builds the game once from their own disc (`tools/make_player_zip.py`,
+`windows/Setup.bat`; docs/WINDOWS_AND_LAN.md section 8, the same route as
+the Fighting Force project). The framework's prebuilt packager below ships
+code recompiled from the game's program, so it is for developers only, not
+for sharing:
 
 ```bash
 scripts/package_release.sh --channel public

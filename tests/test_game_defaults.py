@@ -76,6 +76,20 @@ class Defaults(unittest.TestCase):
         unreached = [o["id"] for o in ours if not o["calls"]]
         self.assertNotIn("bbt.quick-start:menus", unreached, "the menu hook was never reached")
 
+    def test_3_the_pad_is_polled_every_frame(self):
+        """BUGS #49: with psxrecomp v0.3.7's live DualShock mode the game's
+        pad driver loops the DualShock detection and polls the buttons about
+        once every 27 frames, so short presses are lost; game.toml
+        `[controller] lock_mode = true` keeps the plain digital pad. With the
+        shipped config the driver sends button polls (0x42) every frame and
+        never a config-mode command (0x43..0x4F)."""
+        cmds = self.c.pad_commands(100)
+        print(f"\n    pad commands in 100 frames: { {f'0x{k:02X}': v for k, v in sorted(cmds.items())} }",
+              file=sys.stderr)
+        self.assertEqual({k: v for k, v in cmds.items() if 0x43 <= k <= 0x4F}, {},
+                         "the game runs the DualShock config handshake")
+        self.assertGreaterEqual(cmds.get(0x42, 0), 95, "the buttons are not polled every frame")
+
 
 class _Run:
     def __init__(self, client):

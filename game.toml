@@ -63,6 +63,15 @@ guest_cycle_scale_gate = [
 
 [controller]
 default_mode = "digital"
+# The game is played with a digital pad (what every build before psxrecomp
+# v0.3.7 presented: a plain digital controller that ignores the DualShock
+# config command 0x43). Since v0.3.7 an unlocked local seat is a
+# config-capable DualShock; the game's pad driver then loops the DualShock
+# detection (43/45/46/47/4C/4D) and polls the buttons only about once every
+# 27 frames, so short presses are lost (BUGS #49). Netplay and multitap
+# seats are not affected. Drop this line once a probe without it shows one
+# button poll per frame again (NOTES "Framework pins").
+lock_mode = true
 # Player 1 = the first connected gamepad, and the keyboard keys work too
 # (the runtime merges each seat's keyboard binds into its device). On every
 # PC in a match the local player is player 1. A player's own settings.toml

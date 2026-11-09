@@ -1,4 +1,5 @@
 Bugs Bunny & Taz: Time Busters Recompiled @VERSION@
+(prebuilt developer package - the players' ZIP is tools/make_player_zip.py)
 
 A native PC version of the PlayStation game, with Daffy Duck as a third
 playable character and up to three players, each on their own PC.
@@ -21,7 +22,8 @@ FIRST START (once)
    Windows asks about it.)
 3. The launcher asks for your disc: choose your .cue file. It checks that
    it is the original USA disc.
-4. Controls: Settings -> Input. Your gamepad or keyboard is your player.
+4. Your controller: on the first screen, card PLAYER 1, choose it below
+   the controller picture (Configure changes the buttons).
    Then PLAY.
 
 Nothing needs to be set in Mods. Out of the box:

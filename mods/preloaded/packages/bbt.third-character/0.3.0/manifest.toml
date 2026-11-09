@@ -4,7 +4,7 @@
 # contains no game data.
 format_version = 11
 id = "bbt.third-character"
-version = "0.2.0"
+version = "0.3.0"
 # 0.<N>.0: N is the netplay compatibility number every bbt.* package shares
 # (and VERSION). Bump it in all of them on any change to simulation
 # behaviour: a LAN guest without the host's version is refused, so two

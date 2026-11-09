@@ -139,7 +139,12 @@ run against `build-release`, which holds your own mod selection
   `bbt.*` function override is armed and none counted a guard miss
   (`func_override` debug command): after a framework update or a
   regenerate, a hook whose guard words no longer match silently stops
-  working, and this test names it.
+  working, and this test names it. test_3: the game polls the buttons
+  (0x42) every frame and sends no DualShock config command (0x43..0x4F)
+  over 100 frames (`DebugClient.pad_commands`, from the debug server's
+  `sio_trace`). On psxrecomp v0.3.7 without `[controller] lock_mode` the
+  game's pad driver loops the DualShock detection and short presses are
+  lost (BUGS #49).
 - `test_game_net.py` — netplay with our mods (`build-net`): two headless
   peers on 127.0.0.1 in a rollback match (`--netplay`, `PSX_NET_MODE=rollback`),
   each from a folder of its own under `build-tests/out/net-*/` (a link to

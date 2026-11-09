@@ -1,0 +1,73 @@
+Bugs Bunny & Taz: Time Busters Recompiled @VERSION@ - start here
+=================================================================
+
+A native PC version of the PlayStation game, with Daffy Duck as a third
+playable character and up to three players, each on their own PC. Nothing
+in this ZIP comes from the game: your PC builds it once from your own disc.
+
+YOU NEED
+- Windows 10 (version 1903 or newer) or 11, 64-bit.
+- Internet for the first setup (the compiler downloads itself once).
+- About 1.5 GB free on drive C:.
+- Your own Bugs Bunny & Taz: Time Busters (USA) disc dump: its .cue file
+  and its .bin file in one folder.
+
+FIRST START (once)
+1. Right-click the ZIP - Extract All - Extract. Do not run anything from
+   inside the ZIP. Any folder will do.
+2. In the extracted folder, double-click Setup.bat. If Windows says
+   "Windows protected your PC": More info - Run anyway (the scripts are
+   not signed).
+3. When it asks for the disc, drag your .cue file into the window and
+   press Enter.
+4. Wait. The first time it downloads the compiler and builds the whole
+   game for your PC; that takes a while. It installs into
+   C:\RecompDev\BugsBunnyTazRecomp and puts "Bugs Bunny and Taz" on your
+   desktop. If it stops while downloading (the site is busy, for example
+   "504"), run Setup.bat again later.
+5. Start "Bugs Bunny and Taz" from the desktop. Your controller: on the
+   first screen, card PLAYER 1, choose it below the controller picture
+   (Configure changes the buttons). Then PLAY.
+
+OUT OF THE BOX (nothing to set in Mods)
+- Quick start: the game opens on its main menu; in a match the players
+  come from the room; no long intro, short loading screens.
+- Own view: in a match, every PC shows its own player full screen.
+- Third player: Daffy Duck joins when a third player is there (three in a
+  room; on one PC, once Player 3 presses a button, from the next level).
+
+PLAYING TOGETHER (Radmin VPN over the internet, or a home LAN)
+- Everyone needs the same version of this ZIP.
+- Over the internet: everyone installs Radmin VPN; the host creates a
+  network there, the others join it.
+- Host: NETPLAY - LAN / Direct IP - Host Lobby - Create Lobby (port 7777;
+  if another program uses it, pick another port and tell the others).
+  The others: NETPLAY - LAN / Direct IP - Join Direct with the host's
+  Radmin address (26.x.x.x) and the port.
+- When Windows Defender Firewall asks about the game: tick Private and
+  Public, then Allow access. Pressed Cancel? Windows Settings - Windows
+  Security - Firewall - "Allow an app through firewall" - Change settings -
+  tick BugsBunnyTaz_Recompiled (Private and Public). The room uses UDP
+  7777 on the host, 7778 and up on the others, and 48777 to find rooms.
+- The host presses PLAY when everyone is in (two or three players), then
+  in the game NEW GAME - START GAME. Seat 1 is Bugs, seat 2 Taz, seat 3
+  Daffy.
+
+SAVES
+The memory cards are in C:\RecompDev\BugsBunnyTazRecomp\saves. A match is
+played on the host's card, so the host keeps the campaign. Each guest keeps
+a copy (saves\netplay\card1.mcd); to continue that campaign as host later,
+first copy it to a new name (e.g. saves\campaign.mcd), then pick the copy
+for memory card 1 in the launcher's Memory Card panel (Browse). Not the
+file itself: the next match you join writes the host's card into it.
+
+UPDATING
+Extract the new ZIP and run its Setup.bat. Your saves, settings and disc
+path stay. Everyone in a match needs the same version.
+
+IF SOMETHING GOES WRONG
+- Setup stopped: select all the text in its window, copy it and send it to
+  whoever sent you this ZIP.
+- "Content differs" or a version message in the room: not everyone has the
+  same version; everyone runs the newest Setup.bat.
+- More: BugsBunnyTazRecomp\docs\PLAYING_TOGETHER.md

@@ -128,7 +128,7 @@ Select-String '"identity"' build-release-net\BugsBunnyTaz_Recompiled.execution.j
 
 First start: run `build-release-net\BugsBunnyTaz_Recompiled.exe`. The
 launcher asks for the disc: pick `C:\RecompDev\disc\BugsBunnyTaz_TimeBusters_USA.cue`.
-In Settings -> Input, set Player 1 to the controller this PC's player
+On the launcher's first screen, card PLAYER 1, choose the controller this PC's player
 uses. Try a short offline game first (boot, title, Granwich).
 
 ## 5. Radmin VPN
@@ -184,70 +184,68 @@ Then:
   the first difference. None means both machines ran the same game. The
   `rb live dig ... sim=...` lines every 32 ticks are the per-tick digests.
 
-## 8. The package for the players (one ZIP)
+## 8. The package for the players (one ZIP, built by each PC)
 
-The other players build nothing. One Windows PC builds the package, and
-every player gets the same ZIP (`psxrecomp/docs/RELEASING_A_TITLE.md`).
+Decided 2026-11-09 by the user: **the same route as the Fighting Force
+project**, so a friend who installed one game knows the other. The ZIP holds
+no game data and no game code; each player's PC builds the game once from
+their own disc. Nothing is installed: Python comes with the ZIP, and the
+framework's compiler pack downloads itself once.
 
-Tools on that PC, besides Git (section 1). The packager uses MSYS2
-MinGW-w64, not the clang toolchain of section 1:
+Make it on the Mac (or any machine with Git and Python), from a committed
+tree:
 
-- [MSYS2](https://www.msys2.org/), installed to `C:\msys64`. In its
-  "MSYS2 MINGW64" shell:
-
-  ```sh
-  pacman -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-  ```
-
-  This puts `cmake.exe`, `ninja.exe`, `gcc.exe`, `g++.exe` and
-  `objdump.exe` in `C:\msys64\mingw64\bin` (the packager's default
-  `--toolchain-bin`). MSYS2's `bash.exe` is used if the recompiled
-  OpenBIOS has to be regenerated.
-- Python 3.11+ (`py` or `python` on PATH).
-- Internet on the first run: SDL3 and the bundled overlay compiler are
-  downloaded and checked by SHA-256.
-
-In PowerShell, in the clone from section 2 (`C:\RecompDev\BugsBunnyTazRecomp`,
-the disc at `..\disc` as in section 3):
-
-```powershell
-psxrecomp/tools/package_title_release.ps1 --channel public --platform windows
+```bash
+python3 tools/make_player_zip.py --python-zip ../dist/downloads/python-3.12.10-embed-amd64.zip
 ```
 
-The packager refuses a tree with uncommitted changes or a submodule off its
-pin, so build from a clean clone. It regenerates the game code from the
-disc, builds a Release with this repo's `packaging/release.toml` (the
-3-player config, netplay, 5 seats), then checks and verifies the result:
+- `--python-zip`: python.org's Windows embeddable package
+  (`https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip`,
+  MD5 `fe8ef205f2e9c3ba44d0cf9954e1abd3`; the Fighting Force copy has the
+  same MD5).
+- Output: `../dist/BugsBunnyTaz3P_v<VERSION>_<commit>.zip`. Inside it:
+  - `Setup.bat` (a copy of `windows/Setup.bat`);
+  - `START_HERE.txt` (from `windows/START_HERE.txt`);
+  - `BugsBunnyTazRecomp/`: `git archive` of HEAD and every submodule, plus
+    `.bbt_files` and `SOURCE_VERSION`;
+  - `python/`: the embeddable Python, its `._pth` with our tools and the
+    framework's tools added.
+- It refuses an unclean tree, and refuses any file that looks like game
+  data (disc images, memory cards, savestates, `generated/`, builds,
+  `SLUS_*`, retail BIOS names). It also refuses `.bat` files with LF line
+  endings (`.gitattributes`: `*.bat eol=crlf`).
 
-- `dist\BugsBunnyTazRecomp-v<VERSION>-windows-x64.zip` (`VERSION` is the
-  file in the repo root, now 0.2.0); inside it one folder,
-  `BugsBunnyTaz_Recompiled\` (`packaging/release.toml` `zip_folder`), with
-  the exe, `START_HERE.txt` and `PLAYING_TOGETHER.md`
-- a `.sha256` file next to it
+What the player's PC does (`START_HERE.txt`; untested on Windows):
+1. `Setup.bat` copies the folder and Python to
+   `C:\RecompDev\BugsBunnyTazRecomp` (robocopy). It asks once for the
+   `.cue`, remembers it in `disc_source.txt`, and runs
+   `tools/bbt_setup.py`.
+2. `tools/bbt_setup.py` decides whether the game C must be generated again:
+   a SHA-256 over the files the recompiler reads, kept in
+   `generated/.bbt_gen_key`. Then it runs `tools/bbt_build.py`.
+3. `tools/bbt_build.py`:
+   - on Windows, `psxrecomp_cli.py ensure-toolchain` (cmake-clang-v1,
+     downloaded once);
+   - `generate` (checks the disc's digests, copies it into `disc/`);
+   - `rebuild` into `build-game` with
+     `-DBBT_MAX_PLAYERS=5 -DPSX_NETPLAY=ON -DRNET_ENABLE_ICE=OFF`.
+4. A desktop shortcut **Bugs Bunny and Taz** runs `windows/Play.bat`. That
+   starts `build-game` with the staged 3-player config, the copied disc and
+   the `saves` folder.
+5. An update is the new ZIP's `Setup.bat`. It copies over the old folder;
+   saves, settings, the disc path and the builds stay.
 
-**The ZIP is what every player gets.** It holds no disc, BIOS dump, saves or
-settings; the packager refuses a package with any of them. Every player
-needs their own disc dump with the MD5 of section 3.
+Every player must run the same version. Our mod packages and `VERSION`
+carry one netplay compatibility number (0.<N>.0). A guest whose packages
+are another version is refused by the room ("... is not installed"), so
+two different builds cannot start a match. Raise N in `VERSION` and in
+every `mods/preloaded/packages/bbt.*` manifest (and its folder) whenever a
+change alters what the game does; python-unit checks that they agree.
 
-What a player meets (all in `START_HERE.txt`): extract the ZIP first (an
-exe started from inside a ZIP runs from a temp folder without its data);
-the exe is statically linked (the packager fails if it imports a DLL that
-is not part of Windows), so nothing else is installed; it is not signed
-(signing only with `WINDOWS_SIGN_PFX`), so Windows SmartScreen asks once
-("More info" -> "Run anyway"); the first start asks for the disc; the
-host's first room makes Windows Defender Firewall ask (allow Private and
-Public). Settings, keys and saves are written next to the exe, so the
-folder must be writable (not Program Files). Folders with non-ASCII names
-(a Turkish user name, `OneDrive\Masaüstü`) rely on the exe's UTF-8
-manifest (`psxrecomp/assets/windows/psxrecomp.manifest`, Windows 10 1903
-and later); not tried on Windows yet.
-
-Every player must run the same ZIP. Our mod packages and `VERSION` carry
-one netplay compatibility number (0.<N>.0): a guest whose packages are
-another version is refused by the room ("... is not installed"), so two
-different builds cannot start a match. Raise N in `VERSION` and every
-`mods/preloaded/packages/bbt.*` manifest (and its folder) whenever a
-change alters what the game does (python-unit checks they agree).
+The prebuilt route (`packaging/release.toml`, `scripts/package_release.sh`,
+the framework's `package_title_release`) still works for developers, but it
+ships code recompiled from the game's program, so it is **not** for
+sharing.
 
 ## Known limits
 

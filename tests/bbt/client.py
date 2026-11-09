@@ -136,6 +136,38 @@ class DebugClient:
     def counters(self) -> dict[str, int]:
         return {c["name"]: int(c["count"]) for c in self.send({"cmd": "mod_counters"}).get("counters", [])}
 
+    def sio_trace(self, count: int) -> dict:
+        """The last `count` SIO bytes ({seq, tx, rx, func, ...}). The reply
+        spans one line per entry, so it is read up to its closing ]}."""
+        self._id += 1
+        msg = (json.dumps({"cmd": "sio_trace", "count": count, "id": self._id}) + "\n").encode()
+        with socket.create_connection((self.host, self.port), timeout=60) as s:
+            s.sendall(msg)
+            buf = bytearray()
+            while not buf.rstrip().endswith(b"]}"):
+                chunk = s.recv(1 << 22)
+                if not chunk:
+                    break
+                buf += chunk
+        return json.loads(bytes(buf).replace(b"\n", b""))
+
+    def pad_commands(self, frames: int, step: int = 10) -> dict[int, int]:
+        """The pad command bytes (the byte after each 0x01 address byte) the
+        game sends over the next `frames` frames, read every `step` frames so
+        no entry is lost: {command: count}."""
+        out: dict[int, int] = {}
+        last = self.sio_trace(1)["total"]
+        for _ in range(max(1, frames // step)):
+            self.wait_frames(step)
+            now = self.sio_trace(1)["total"]
+            ents = [e for e in self.sio_trace(now - last + 64)["entries"] if e["seq"] >= last]
+            for x, y in zip(ents, ents[1:]):
+                if x["tx"] == "0x01" and y["tx"] != "0x01":
+                    k = int(y["tx"], 16)
+                    out[k] = out.get(k, 0) + 1
+            last = now
+        return out
+
     def mod_cmd(self, name: str, args: str = "") -> dict:
         r = self.send({"cmd": "mod_cmd", "name": name, "args": args})
         if not r.get("ok"):
