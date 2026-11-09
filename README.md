@@ -10,11 +10,15 @@ Static recompilation of **BugsBunnyTaz** built on
 [psxrecomp](https://github.com/mstan/psxrecomp) and
 [recomp-ui](https://github.com/RetroPortingToolKit/recomp-ui).
 
-_Add a short pitch in catalog_identity.json / README._
+A native PC version of *Bugs Bunny & Taz: Time Busters* (PS1, USA) with
+**Daffy Duck as a third playable character** and up to three players, each
+on their own PC over LAN or Radmin VPN, each with their own full-screen
+view. The mods (Quick start, the own view, the third player) are on by
+default; players' guide: [docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md).
 
 | | |
 |---|---|
-| Players | 2 |
+| Players | 2 (3 with Daffy: the 3-player config `game_3p.toml`) |
 | Region | USA |
 | Publisher | — |
 | Year | — |
@@ -51,9 +55,10 @@ You must own the original game. Disc images under `disc/` are gitignored and
 must never be committed. Retail BIOS dumps are not redistributed and no C
 derived from one may be committed; releases run on the bundled MIT OpenBIOS.
 
-`generated/` (the recompiled game C) **is committed**: releases ship the
-compiled game, built by CI from that tree. Regenerate and commit it whenever
-seeds or the framework pin change.
+`generated/` (the recompiled game C) is **not** committed in this project:
+it is derived from the disc, so every machine generates its own from its
+own disc copy (`psxrecomp_cli.py generate`, below). The release package
+is built the same way (see "Releases" below).
 
 Default app icon: `assets/psxrecomp.ico` (and `.png` / `.svg`) — Retro-themed controller mark from `psxrecomp/assets/`. Windows builds embed it via `APP_ICON`.
 
@@ -63,15 +68,16 @@ Optional box art under `launcher_assets/img/` may come from
 
 ## Quick start (dev)
 
-Building on a Windows PC, and playing a LAN / Radmin VPN match between two
-machines: see [docs/WINDOWS_AND_LAN.md](docs/WINDOWS_AND_LAN.md).
+Building on a Windows PC, the players' ZIP, and a LAN / Radmin VPN match
+between two or three machines: see [docs/WINDOWS_AND_LAN.md](docs/WINDOWS_AND_LAN.md).
+The disc copy sits next to the repository (`../disc/`, as `game.toml` says).
 
 ```bash
 git submodule update --init --recursive
 ./psxrecomp/tools/ci/build_emitters.sh
 python3 psxrecomp/psxrecomp_cli.py generate \
-  --config game.toml --project-root . --disc disc/<your>.cue
-git add generated && git commit -m "Regenerate game C"
+  --config game.toml --project-root . --disc ../disc/<your>.cue
+# generated/ stays out of git (derived from the disc).
 # Configures, builds, and stages overlay_toolchain/ beside the runtime so
 # streamed overlays can be compiled to native shards (a bare cmake build
 # skips that stage and leaves every overlay gap interpreted).
@@ -79,9 +85,13 @@ python3 psxrecomp/psxrecomp_cli.py rebuild \
   --config game.toml --project-root . --build-dir build-release --no-pgo
 ```
 
-Official optimized Windows/Linux releases use the maintained shared builder
-with the title disc available. Commit the desired `VERSION`, source and
-framework pins, then run:
+### Releases
+
+The players' Windows ZIP is built on a Windows PC with the disc available
+(docs/WINDOWS_AND_LAN.md section 8). It ships the 3-player config with
+netplay (LAN / Direct IP) and five seats (`packaging/release.toml`). Official
+optimized Windows/Linux releases use the maintained shared builder. Commit
+the desired `VERSION`, source and framework pins, then run:
 
 ```bash
 scripts/package_release.sh --channel public
@@ -96,11 +106,10 @@ PGO boot training on supported native toolchains, staging and verification.
 Boot training is a build step, not gameplay qualification or a performance
 claim. See `psxrecomp/docs/RELEASING_A_TITLE.md`.
 
-The separate *Release builds* CI workflow (tag `vX.Y.Z` or dispatch) builds
-committed `generated/` C without a disc on Linux, Windows and macOS. It uses
-`scripts/package_prebuilt_release.sh` and attaches compiled-game ZIPs. That
-explicit prebuilt path does not train selective PGO and is not the official
-optimized-release command. The common builder does not add macOS support.
+The scaffold's *Release builds* CI workflow (tag `vX.Y.Z` or dispatch)
+builds committed `generated/` C without a disc. This project does not
+commit `generated/`, so that workflow does not apply here. The common
+builder does not add macOS support.
 
 Studio's current Export action still uses the old prebuilt argument contract;
 use the shared command above for optimized releases until Studio adopts the

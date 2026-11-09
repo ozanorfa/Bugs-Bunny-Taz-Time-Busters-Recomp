@@ -82,7 +82,8 @@ run against `build-release`, which holds your own mod selection
   character, the HUD has set itself up, no cinema bars, the pause screen
   opens and closes; a level jump takes less than half the stock 470 frames
   at the default 2x CD speed. With skip_logos off the logos are shown.
-- `test_game_ownview.py` — the engine's own two views (experiment
+- `test_game_ownview.py` — the engine's own two views (feature
+  "Own view for every player", id `two-views`; formerly "Two views", experiment
   `bbt.own-view` "two-views", with Quick start): Granwich runs with the
   view count 2, view 0 follows Bugs and view 1 Taz, each pad moves only its
   own character, and every frame that draws the world sets the top-half and
@@ -95,7 +96,7 @@ run against `build-release`, which holds your own mod selection
   while both players run (game.toml `[timing]` cycle scale gated on the
   view count).
 - `test_game_ownview3.py` — three views (build-p3, 3-player game.toml, the
-  third player "p3" + "Two views" + Quick start): the view count becomes 3,
+  third player "p3" + the own view + Quick start): the view count becomes 3,
   the views follow Bugs, Taz and the third actor with single-player
   cameras, seat 2 turns the third actor to camera 2's forward, the game
   keeps ≥ 0.44 frames per vblank with everyone running, the shared
@@ -142,7 +143,7 @@ run against `build-release`, which holds your own mod selection
   logged every 32 ticks agree. One peer with the mod and one without: the
   match never starts ("LAN content differs between peers"). Both also on
   Quick start: it acts alike on both peers and the digests agree. Both on
-  Quick start and "Two views", each in a hidden OpenGL window
+  Quick start and the own view, each in a hidden OpenGL window
   (`NetMatch(window=True)`, GL scale capped at 2x with `PSX_GL_MAX_DIM`):
   each peer draws its own player's view full screen
   (`psx_mod_render_local_view`, counters `local_view_0` / `local_view_1`),
@@ -153,9 +154,9 @@ run against `build-release`, which holds your own mod selection
   the third actor spawns on every peer, the third peer's own pad (seat 2)
   drives it the same way everywhere, digests equal; the same with Daffy
   (each peer builds his moves from its disc: SHA-256-identical images). Three peers on the
-  third character + "Two views" in hidden windows: each peer draws its own
+  third character + the own view in hidden windows: each peer draws its own
   seat's view (`local_view_0/1/2`), no watchdog, no split shown, digests
-  equal. Two peers on "Two views" after Bugs is down (a hit put in RAM on
+  equal. Two peers with the own view after Bugs is down (a hit put in RAM on
   both, so no digest check): Taz is player 1, the guest draws Taz (view 0)
   and the host, whose Bugs is out, his teammate Taz (`local_view_teammate`).
   About 4.5 min in all.

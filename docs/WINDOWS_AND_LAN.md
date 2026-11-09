@@ -168,7 +168,8 @@ Then:
 2. **Guest:** NETPLAY -> LAN / Direct IP -> Join Direct: Host IP = the
    host's Radmin address, Port 7777.
 3. Host presses PLAY. Seat P1 = host (Bugs), P2 = guest (Taz).
-4. NEW GAME -> TWO PLAYERS -> START GAME, play a few minutes in Granwich:
+4. The game opens on its main menu (Quick start): NEW GAME -> START GAME
+   (the players come from the room), play a few minutes in Granwich:
    walk apart, jump, talk to Granny.
 
 ## 7. What to look at and send back
