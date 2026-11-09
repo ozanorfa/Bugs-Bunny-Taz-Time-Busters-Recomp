@@ -105,3 +105,4 @@ starvation_dump.jsonl
 # The desktop icon, made on each player's PC from the game's title screen
 /BugsBunnyTaz.ico
 /disc_source.txt
+/logs/

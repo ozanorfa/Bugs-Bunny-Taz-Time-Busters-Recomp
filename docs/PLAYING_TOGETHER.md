@@ -142,4 +142,4 @@ recompiler's inputs changed). Everyone in a match needs the same version.
 | Setup says the disc digests do not match | It is not the original USA disc (or a damaged dump). |
 | "Content differs between peers" or a version message in the room | Not everyone has the same version: everyone runs the newest ZIP's Setup.bat. |
 | "No response" on Join Direct | Press Join Direct again; then check the host's firewall (step 6 above). |
-| Something else in a match | Send the host's and guests' logs: start the game from PowerShell in `C:\RecompDev\BugsBunnyTazRecomp` with `Start-Process .\build-game\BugsBunnyTaz_Recompiled.exe -ArgumentList '--game', "$PWD\build-game\game_3p.toml", '--disc', "$PWD\disc\BugsBunnyTaz_TimeBusters_USA.cue", '--memcard-dir', "$PWD\saves" -Wait -RedirectStandardError "$HOME\Desktop\peer.log"` |
+| Something else in a match (lag, choppy sound, a freeze) | Everyone starts the game with `C:\RecompDev\BugsBunnyTazRecomp\windows\Play_with_log.bat` instead of the desktop shortcut, plays, and sends `logs\last_run.log` afterwards (it holds the netplay delay, rollbacks and errors). |

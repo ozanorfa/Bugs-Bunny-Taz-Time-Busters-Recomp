@@ -75,6 +75,11 @@ path stay. Everyone in a match needs the same version.
 IF SOMETHING GOES WRONG
 - Setup stopped: select all the text in its window, copy it and send it to
   whoever sent you this ZIP.
+- A match lags, the sound is choppy or the game stops: start the game with
+  windows\Play_with_log.bat (in C:\RecompDev\BugsBunnyTazRecomp) instead
+  of the desktop shortcut, play, then send logs\last_run.log.
+- Online, everyone sets only their own PLAYER 1; PLAYER 2 and 3 are for
+  several players on one PC.
 - "Content differs" or a version message in the room: not everyone has the
   same version; everyone runs the newest Setup.bat.
 - More: BugsBunnyTazRecomp\docs\PLAYING_TOGETHER.md
