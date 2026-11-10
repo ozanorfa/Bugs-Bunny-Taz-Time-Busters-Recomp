@@ -105,17 +105,22 @@ def main() -> int:
     if args.dry_run:
         print("would run:", " ".join(cmd))
         return 0
-    # Setup.bat reads this back with `set /p`, which decodes the console's
-    # code page (OEM, e.g. 857 on a Turkish Windows), not UTF-8. A path that
-    # code page cannot hold is not remembered: Setup.bat then asks again.
+    print(">> " + " ".join(f'"{c}"' if " " in c else c for c in cmd), flush=True)
+    rc = subprocess.call(cmd, cwd=ROOT)
+    if rc != 0:
+        # The disc is not remembered after a failed build (and an older note
+        # is dropped): a wrong dump would otherwise be taken again by every
+        # later Setup run. The next run finds the disc again or asks.
+        NOTE.unlink(missing_ok=True)
+        sys.exit(f"build failed (exit {rc}); the output above says why")
+    # Remembered only now, for updates. Setup.bat reads this back with
+    # `set /p`, which decodes the console's code page (OEM, e.g. 857 on a
+    # Turkish Windows), not UTF-8. A path that code page cannot hold is not
+    # remembered: Setup.bat then searches or asks again.
     try:
         NOTE.write_text(str(disc) + "\n", encoding="oem" if os.name == "nt" else "utf-8")
     except (OSError, UnicodeError, LookupError):
         NOTE.unlink(missing_ok=True)
-    print(">> " + " ".join(f'"{c}"' if " " in c else c for c in cmd), flush=True)
-    rc = subprocess.call(cmd, cwd=ROOT)
-    if rc != 0:
-        sys.exit(f"build failed (exit {rc}); the output above says why")
     if MARKER.exists():
         KEY_FILE.write_text(key + "\n")
     if not ICON.is_file() and EXE.is_file():

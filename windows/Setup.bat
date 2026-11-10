@@ -30,6 +30,10 @@ echo   ===================================================
 echo   Install folder: %DEST%
 echo.
 
+rem An open game holds its .exe: the build could not replace it.
+tasklist /fi "imagename eq BugsBunnyTaz_Recompiled.exe" 2>nul | find /i "BugsBunnyTaz_Recompiled.exe" >nul
+if not errorlevel 1 goto :game_running
+
 set "MODE="
 if exist "%SRC%\tools\bbt_setup.py" set "MODE=zip"
 if not defined MODE if exist "%BUNDLE%" set "MODE=bundle"
@@ -136,7 +140,11 @@ rem ---- messages ------------------------------------------------------------
 echo   Nothing to install next to this file: it needs the folder
 echo   BugsBunnyTazRecomp (players' ZIP: extract the whole ZIP first) or
 echo   BugsBunnyTazRecomp.bundle, in:
-echo     %HERE%
+echo     "%HERE%"
+goto :stop
+:game_running
+echo   The game is still open. Close it (and its launcher window), then run
+echo   Setup.bat again.
 goto :stop
 :no_zip_python
 echo   The python folder is missing next to this file: extract the whole ZIP
@@ -171,12 +179,15 @@ pause
 exit /b 1
 
 rem ---- the disc search (called; single-line statements, no blocks) ------
-rem The first .cue with the game's .bin beside it: the dump the game expects
-rem is one .bin of 678069840 bytes (game.toml [prepare_disc] known_sizes),
-rem so another game's disc in a neighbouring folder is never taken.
+rem The first .cue whose own .bin (same name) is the game's dump: one .bin
+rem of 678069840 bytes (game.toml [prepare_disc] known_sizes), so another
+rem game's .cue is never taken, even in a folder holding many games. The
+rem install's own checked copy comes first (an update after the original
+rem dump was moved), then this folder, the one above and the one above that.
 :find_cue
 set "CUE="
-call :scan_root "%HERE%."
+call :try_cue "%DEST%\disc\BugsBunnyTaz_TimeBusters_USA.cue"
+if not defined CUE call :scan_root "%HERE%."
 if not defined CUE call :scan_root "%HERE%.."
 if not defined CUE call :scan_root "%HERE%..\.."
 exit /b 0
@@ -192,8 +203,6 @@ for %%C in ("%~f1\*.cue") do call :try_cue "%%~fC"
 exit /b 0
 :try_cue
 if defined CUE exit /b 0
-set "TRY_DIR=%~dp1"
-set "TRY_OK="
-for %%B in ("%TRY_DIR%*.bin") do if "%%~zB"=="678069840" set "TRY_OK=1"
-if defined TRY_OK set "CUE=%~f1"
+if not exist "%~dpn1.bin" exit /b 0
+for %%B in ("%~dpn1.bin") do if "%%~zB"=="678069840" set "CUE=%~f1"
 exit /b 0

@@ -31,12 +31,13 @@ player full screen with its own camera.
    "Windows protected your PC", click **More info**, then **Run anyway**
    (the scripts are not signed).
 3. It **finds your disc by itself**: it looks in its own folder, the one
-   above and the one above that, and their subfolders, for a `.cue` with
-   the game's `.bin` beside it (the dump the room expects, 678,069,840
-   bytes, so another game's disc is never taken). If it does not find
-   it, it asks: drag your `.cue` file into the window and press Enter.
-   The disc path is remembered for updates. (The Fighting Force ZIP's
-   Setup does the same.)
+   above and the one above that, and their subfolders, for a `.cue` whose
+   own `.bin` (same name) is the game's dump (the one the room expects,
+   678,069,840 bytes, so another game's disc is never taken, even in a
+   folder of many games). If it does not find it, it asks: drag your
+   `.cue` file into the window and press Enter. The disc path is
+   remembered after a successful build, for updates. (The Fighting Force
+   ZIP's Setup searches the same way.)
 4. Wait: the first time the compiler is downloaded once and the whole game
    is built for this PC (minutes, more on a slow PC). It installs into
    `C:\RecompDev\BugsBunnyTazRecomp` (the build keeps its own copy of the
@@ -88,6 +89,13 @@ selection on every PC, and the guests' own selections are left as they were.
 
 ## Starting a match
 
+**Before every match, everyone starts the game fresh** from the desktop
+shortcut: close it first if you played offline or anyone changed Mods
+since it was opened, and when the host changes Mods between matches
+(own view off, for example), everyone closes and reopens it. The mods
+place their data by what was played since the game was opened, so PCs
+with a different history can fall out of sync (BUGS #55, #56).
+
 0. **Over the internet:** everyone installs Radmin VPN; the host creates a
    network there (Network -> Create network, a name and a password), the
    others join it (Network -> Join network). Each PC gets a Radmin address
@@ -103,7 +111,10 @@ selection on every PC, and the guests' own selections are left as they were.
    again; if it stays that way, the host's firewall is blocking the game
    (see "The first start on Windows", step 6).
 3. When everyone is seated (two or three players), the host presses
-   **PLAY**.
+   **PLAY**. The seats taken must be 1, 2 and 3 with no gap: if a player
+   left and the room shows an empty seat between players, the host
+   creates the room again (a player in seat 4 with seat 3 empty gets no
+   Daffy; BUGS #57).
 4. In the game, the host: **NEW GAME -> START GAME**. Two or three seated
    players play together; with three, Daffy joins next to Taz in every
    level that has Taz. (△ on START GAME goes back to the main menu.)

@@ -48,6 +48,10 @@ OUT OF THE BOX (nothing to set in Mods)
 
 PLAYING TOGETHER (Radmin VPN over the internet, or a home LAN)
 - Everyone needs the same version of this ZIP.
+- Before every match, everyone starts the game fresh from the desktop
+  shortcut: close it first if you played offline or changed Mods since
+  you opened it. If the host changes Mods between matches, everyone
+  closes and reopens the game. Otherwise the PCs can fall out of sync.
 - Over the internet: everyone installs Radmin VPN; the host creates a
   network there, the others join it.
 - Host: NETPLAY - LAN / Direct IP - Host Lobby - Create Lobby (port 7777;
@@ -61,7 +65,8 @@ PLAYING TOGETHER (Radmin VPN over the internet, or a home LAN)
   7777 on the host, 7778 and up on the others, and 48777 to find rooms.
 - The host presses PLAY when everyone is in (two or three players), then
   in the game NEW GAME - START GAME. Seat 1 is Bugs, seat 2 Taz, seat 3
-  Daffy.
+  Daffy. The seats must be 1, 2 and 3 with no empty seat between: if one
+  is empty, the host creates the room again.
 
 SAVES
 The memory cards are in C:\RecompDev\BugsBunnyTazRecomp\saves. A match is
@@ -78,6 +83,11 @@ path stay. Everyone in a match needs the same version.
 IF SOMETHING GOES WRONG
 - Setup stopped: select all the text in its window, copy it and send it to
   whoever sent you this ZIP.
+- Setup says the game is still open: close the game and its launcher
+  window, then run Setup.bat again.
+- Setup was closed (or the disk was full) while it copied the disc: delete
+  the folder C:\RecompDev\BugsBunnyTazRecomp\disc, then run Setup.bat
+  again.
 - A match lags, the sound is choppy or the game stops: start the game with
   windows\Play_with_log.bat (in C:\RecompDev\BugsBunnyTazRecomp) instead
   of the desktop shortcut, play, then send logs\last_run.log.
