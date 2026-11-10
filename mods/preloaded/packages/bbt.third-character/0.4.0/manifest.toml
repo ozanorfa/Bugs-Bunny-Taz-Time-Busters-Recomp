@@ -159,3 +159,10 @@ label = "Always (tests: seat 3 driven by the debug command)"
 feature = "p3"
 package = "bbt.shared"
 requires_feature = "actor-update"
+
+# The Transylvania test's upload map uses the shared texture-upload hook
+# (src/mods/load_image_hub.h), which the Turkish flag also uses.
+[[requirement]]
+feature = "trca01"
+package = "bbt.shared"
+requires_feature = "load-image"

@@ -85,6 +85,7 @@
 #include "donor_runtime.h"
 #include "donor_tex.h"
 #include "func_override.h"
+#include "load_image_hub.h"
 #include "mod_plugins.h"
 #include "trca01_profile.h"
 
@@ -218,18 +219,12 @@ static uint32_t g_donor_guest;     /* process-lifetime mod memory, 0 if none */
 
 /* ---- M3: textures ------------------------------------------------------ */
 #define ADDR_LEVEL_ID      0x80010000u  /* Bouze id of the current level */
-#define ADDR_LOAD_IMAGE    0x80071110u  /* PsyQ LoadImage core (RECT *a0, data *a1) */
 /* Frame buffers live at x >= 512 (GPU state: display 512,0 / 512,256, draw
  * areas 512..1023), so new texels and CLUTs go left of that. */
 #define VRAM_TEXTURE_LIMIT 512
 #define MAX_TAZ_MODEL      0x10000u     /* Taz's model blob is 11,528 bytes */
 #define GPR_A0 4
 #define GPR_SP 29
-
-/* addiu sp,sp,-0x30 / sw s1,0x14(sp) / move s1,a0 / sw s2,0x18(sp) */
-static const uint32_t kLoadImageGuard[4] = {
-    0x27BDFFD0u, 0xAFB10014u, 0x00808821u, 0xAFB20018u,
-};
 
 static VramMap* g_occ_level;       /* VRAM uploaded by the current level load */
 static int g_in_level_load;
@@ -282,8 +277,11 @@ static void trca01_read_size_option(void)
     g_scale = 0x1000 * pct / 100;
 }
 
+static void load_image_hook(struct CPUState* cpu, uint32_t rect, uint32_t src);
+
 static void trca01_activate(void)
 {
+    bbt_load_image_hook(BBT_LOAD_IMAGE_HOOK_TRCA01, load_image_hook);
     trca01_read_size_option();
     if (!g_donor_guest)
         g_donor_guest = psx_mod_alloc_guest_memory(DONOR_RESERVE, 16);
@@ -292,16 +290,21 @@ static void trca01_activate(void)
     trca01_load_donor();
 }
 
-/* Wrap of the LoadImage core: record where the game puts pixels. */
-static int load_image_wrap(CPUState* cpu)
+/* LoadImage-core hook (bbt.shared/load-image): record where the game puts
+ * pixels. */
+static void load_image_hook(struct CPUState* cpu, uint32_t rect, uint32_t src)
 {
-    const uint32_t rect = cpu->gpr[GPR_A0];
+    (void)cpu;
+    (void)src;
     if (g_in_level_load && g_occ_level && in_main_ram(rect) && in_main_ram(rect + 7u))
         vram_map_mark(g_occ_level, (int16_t)psx_mod_read_half(rect),
                       (int16_t)psx_mod_read_half(rect + 2u), (int16_t)psx_mod_read_half(rect + 4u),
                       (int16_t)psx_mod_read_half(rect + 6u));
-    func_override_call_original(cpu);
-    return 1;
+}
+
+static void trca01_session_reset(void)
+{
+    bbt_load_image_hook(BBT_LOAD_IMAGE_HOOK_TRCA01, NULL);
 }
 
 /* After a patched load outside the donor's level: put the donor's texels
@@ -616,8 +619,6 @@ PSX_MOD_CONSTRUCTOR(register_bbt_third_character)
     (void)psx_mod_register_function_override(
         PLUGIN_TRCA01 ":level-load", ADDR_LEVEL_LOAD_PARSE,
         trca01_level_load_wrap, kLevelLoadParseGuard, 4, FO_CREDIT_SELF);
-    (void)psx_mod_register_function_override(
-        PLUGIN_TRCA01 ":load-image", ADDR_LOAD_IMAGE,
-        load_image_wrap, kLoadImageGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_session_reset_plugin(PLUGIN_TRCA01, trca01_session_reset);
     (void)psx_mod_register_command("bbt.trca01", trca01_command);
 }

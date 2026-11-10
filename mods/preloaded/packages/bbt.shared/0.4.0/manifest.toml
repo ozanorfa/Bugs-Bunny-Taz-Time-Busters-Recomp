@@ -13,7 +13,7 @@ version = "0.4.0"
 # different builds cannot start a match (NOTES.md "Netplay compatibility").
 name = "Shared game hooks (internal)"
 author = "BugsBunnyTazRecomp project"
-description = "Internal: hooks shared by the Own View and Third Character features. Turned on by them when needed."
+description = "Internal: hooks shared by the Own View, Third Character and Decorations features. Turned on by them when needed."
 resolver = "declarative"
 
 [[target]]
@@ -30,3 +30,15 @@ hidden = true
 [[plugin]]
 feature = "actor-update"
 id = "bbt.shared.actor-update"
+
+[[feature]]
+id = "load-image"
+name = "Shared LoadImage hook (internal)"
+description = "Internal. One override of the game's texture upload (PsyQ LoadImage core) for the features that need it (the Turkish flag, the Transylvania-enemy test). Turned on automatically by those features."
+group = "Internal"
+default_enabled = false
+hidden = true
+
+[[plugin]]
+feature = "load-image"
+id = "bbt.shared.load-image"
