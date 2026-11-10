@@ -13,13 +13,16 @@ YOU NEED
   and its .bin file in one folder.
 
 FIRST START (once)
-1. Right-click the ZIP - Extract All - Extract. Do not run anything from
-   inside the ZIP. Any folder will do.
+1. Put the ZIP and the folder with your disc (its .cue and .bin) side by
+   side in one folder. Right-click the ZIP - Extract All - Extract. Do
+   not run anything from inside the ZIP.
 2. In the extracted folder, double-click Setup.bat. If Windows says
    "Windows protected your PC": More info - Run anyway (the scripts are
    not signed).
-3. When it asks for the disc, drag your .cue file into the window and
-   press Enter.
+3. It finds your disc by itself (in its own folder, the one above and the
+   one above that, and their subfolders). If it does not, it asks: drag
+   your .cue file into the window and press Enter. The disc is
+   remembered for updates.
 4. Wait. The first time it downloads the compiler and builds the whole
    game for your PC; that takes a while. It installs into
    C:\RecompDev\BugsBunnyTazRecomp and puts "Bugs Bunny and Taz" on your

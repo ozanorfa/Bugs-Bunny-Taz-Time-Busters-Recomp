@@ -51,11 +51,24 @@ goto :py_ok
 if not exist "%HERE%python\python.exe" goto :no_zip_python
 :py_ok
 
-rem ---- 2. the disc (asked once, remembered for updates) --------------------
+rem ---- 2. the disc (found or asked once, remembered for updates) ----------
+rem A .cue dropped on this file wins, then the remembered path, then a search
+rem of this folder, the one above and the one above that (and their
+rem subfolders) for the game's dump, then the drag-and-drop prompt. (The
+rem Fighting Force project's Setup.bat searches the same way.)
 if defined CUE goto :check_cue
 if exist "%DEST%\disc_source.txt" set /p CUE=<"%DEST%\disc_source.txt"
-if not defined CUE goto :ask_cue
+if not defined CUE goto :find_disc
 if exist "%CUE%" goto :check_cue
+:find_disc
+call :find_cue
+if not defined CUE goto :not_found
+echo   Found your disc:
+echo     "%CUE%"
+goto :check_cue
+:not_found
+echo   Your disc was not found next to this folder.
+echo.
 :ask_cue
 set "CUE="
 echo   Drag your Bugs Bunny and Taz: Time Busters (USA) .cue file into this
@@ -156,3 +169,31 @@ echo   copy it and send it along: it says what went wrong.
 echo.
 pause
 exit /b 1
+
+rem ---- the disc search (called; single-line statements, no blocks) ------
+rem The first .cue with the game's .bin beside it: the dump the game expects
+rem is one .bin of 678069840 bytes (game.toml [prepare_disc] known_sizes),
+rem so another game's disc in a neighbouring folder is never taken.
+:find_cue
+set "CUE="
+call :scan_root "%HERE%."
+if not defined CUE call :scan_root "%HERE%.."
+if not defined CUE call :scan_root "%HERE%..\.."
+exit /b 0
+:scan_root
+if defined CUE exit /b 0
+for %%C in ("%~f1\*.cue") do call :try_cue "%%~fC"
+if defined CUE exit /b 0
+for /d %%D in ("%~f1\*") do call :scan_dir "%%~fD"
+exit /b 0
+:scan_dir
+if defined CUE exit /b 0
+for %%C in ("%~f1\*.cue") do call :try_cue "%%~fC"
+exit /b 0
+:try_cue
+if defined CUE exit /b 0
+set "TRY_DIR=%~dp1"
+set "TRY_OK="
+for %%B in ("%TRY_DIR%*.bin") do if "%%~zB"=="678069840" set "TRY_OK=1"
+if defined TRY_OK set "CUE=%~f1"
+exit /b 0

@@ -24,13 +24,19 @@ player full screen with its own camera.
 
 ## The first start on Windows
 
-1. Right-click the ZIP -> **Extract All...** -> Extract. Do not run
-   anything from inside the ZIP. Any folder will do.
+1. Put the ZIP and the folder with your disc (the `.cue` and its `.bin`)
+   **side by side in one folder**, then right-click the ZIP -> **Extract
+   All...** -> Extract. Do not run anything from inside the ZIP.
 2. Double-click `Setup.bat` in the extracted folder. If Windows says
    "Windows protected your PC", click **More info**, then **Run anyway**
    (the scripts are not signed).
-3. When it asks for the disc, drag your `.cue` file into the window and
-   press Enter. It is asked once and remembered for updates.
+3. It **finds your disc by itself**: it looks in its own folder, the one
+   above and the one above that, and their subfolders, for a `.cue` with
+   the game's `.bin` beside it (the dump the room expects, 678,069,840
+   bytes, so another game's disc is never taken). If it does not find
+   it, it asks: drag your `.cue` file into the window and press Enter.
+   The disc path is remembered for updates. (The Fighting Force ZIP's
+   Setup does the same.)
 4. Wait: the first time the compiler is downloaded once and the whole game
    is built for this PC (minutes, more on a slow PC). It installs into
    `C:\RecompDev\BugsBunnyTazRecomp` (the build keeps its own copy of the

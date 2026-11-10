@@ -217,8 +217,10 @@ python3 tools/make_player_zip.py --python-zip ../dist/downloads/python-3.12.10-e
 
 What the player's PC does (`START_HERE.txt`; untested on Windows):
 1. `Setup.bat` copies the folder and Python to
-   `C:\RecompDev\BugsBunnyTazRecomp` (robocopy). It asks once for the
-   `.cue`, remembers it in `disc_source.txt`, and runs
+   `C:\RecompDev\BugsBunnyTazRecomp` (robocopy). It finds the `.cue` (its
+   own folder, the one above, the one above that, and their subfolders:
+   the first `.cue` with a 678,069,840-byte `.bin` beside it) or asks
+   once, remembers it in `disc_source.txt`, and runs
    `tools/bbt_setup.py`.
 2. `tools/bbt_setup.py` decides whether the game C must be generated again:
    a SHA-256 over the files the recompiler reads, kept in
