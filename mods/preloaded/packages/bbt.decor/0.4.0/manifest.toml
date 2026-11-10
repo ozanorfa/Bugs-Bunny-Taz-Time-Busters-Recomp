@@ -20,7 +20,7 @@ game_id = "SLUS-01144"
 [[feature]]
 id = "turkish-flag"
 name = "Turkish flag in Granwich"
-description = "A Turkish flag hangs from the arched windows on the side of Granny's house, the way flags are hung from windows on national holidays. Drawn into the game's own wall texture at its own resolution, so it shows with every renderer and in a netplay match (every player needs the same choice)."
+description = "A Turkish flag hangs from the arched windows on both sides of Granny's house, the way flags are hung from windows on national holidays. Drawn into the game's own wall texture at its own resolution, so it shows with every renderer and in a netplay match (every player needs the same choice)."
 group = "Decorations"
 default_enabled = true
 

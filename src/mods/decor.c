@@ -2,9 +2,10 @@
  * Decorations — Bugs Bunny & Taz: Time Busters (SLUS-01144).
  *
  * Feature "turkish-flag" of package bbt.decor (plugin bbt.decor): a Turkish
- * flag hangs from the arched window on the side of Granny's house in
- * Granwich, the way flags are hung from windows on national holidays
- * (NOTES.md "Turkish flag").
+ * flag hangs from the arched windows of Granny's house in Granwich, the way
+ * flags are hung from windows on national holidays (NOTES.md "Turkish
+ * flag"). Both side walls use the same window texture, so the house shows
+ * four flags, two on each side.
  *
  * The window is part of one 64x64 4-bit wall texture that Granwich uploads
  * to VRAM (256,448) 16x64 words, with its 16-colour CLUT at (128,475)
