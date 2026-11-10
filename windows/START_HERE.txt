@@ -88,6 +88,10 @@ IF SOMETHING GOES WRONG
 - Setup was closed (or the disk was full) while it copied the disc: delete
   the folder C:\RecompDev\BugsBunnyTazRecomp\disc, then run Setup.bat
   again.
+- The game closes by itself (for example at a level change): before you
+  start it again, send C:\RecompDev\BugsBunnyTazRecomp\psx_last_run_report.json
+  (the next start writes over it) and, if you played with
+  Play_with_log.bat, logs\last_run.log.
 - A match lags, the sound is choppy or the game stops: start the game with
   windows\Play_with_log.bat (in C:\RecompDev\BugsBunnyTazRecomp) instead
   of the desktop shortcut, play, then send logs\last_run.log.

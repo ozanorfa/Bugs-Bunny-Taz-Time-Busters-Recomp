@@ -165,6 +165,7 @@ recompiler's inputs changed). Everyone in a match needs the same version.
 
 | What you see | What to do |
 |---|---|
+| The game closes by itself (for example at a level change) | Before starting it again, send `C:\RecompDev\BugsBunnyTazRecomp\psx_last_run_report.json` (the next start writes over it) and `logs\last_run.log` if you played with `Play_with_log.bat`. A rare stop at a level change is known (BUGS #60). |
 | Setup stops | Select all the text in its window, copy it and send it along. |
 | Setup stops while downloading ("504", no internet) | Run Setup.bat again later. |
 | "No .bin file next to that .cue" | Put the dump's `.cue` and `.bin` in one folder. |
