@@ -120,10 +120,11 @@ selection on every PC, and the guests' own selections are left as they were.
 
 The game's start files (`windows\Play.bat`, used by the desktop shortcut, and
 `windows\Play_with_log.bat`) cap the GPU surface the game draws on at 2x.
-In a match every PC draws its own player's view a second time every frame,
-and without the cap that surface was set up at 8x whatever was chosen in
-Mods, so matches ran far too slowly (choppy sound, about 2 s of input lag;
-BUGS #51). With a strong PC you can try a sharper picture: start the game
+In a match every PC draws its own player's view a second time every frame.
+At the Internal Resolution mod's default of 4x that second draw took more
+than a whole frame, so matches ran far too slowly (choppy sound, about 2 s
+of input lag; BUGS #51). The cap holds whatever the host picks in Mods (in
+a room the host's Mods count for everyone). With a strong PC you can try a sharper picture: start the game
 from a Command Prompt in `C:\RecompDev\BugsBunnyTazRecomp` with
 `set PSX_GL_MAX_DIM=4096` and then `windows\Play.bat`.
 
