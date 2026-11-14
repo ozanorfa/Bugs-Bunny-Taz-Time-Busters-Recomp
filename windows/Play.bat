@@ -15,6 +15,12 @@ rem in Mods. To try a sharper picture, set PSX_GL_MAX_DIM=4096 before
 rem starting this file.
 if not defined PSX_GL_MAX_DIM set "PSX_GL_MAX_DIM=2048"
 if not defined PSX_GL_HIRES_WINDOW set "PSX_GL_HIRES_WINDOW=0"
+rem The runtime compiler for game code is off, as in every test of this
+rem build: the game code is compiled once by Setup.bat, and the compiler
+rem only costs CPU while you play (the Fighting Force project does the
+rem same). Set PSX_OVERLAY_AUTOCOMPILE_OFF=0 before starting this file to
+rem turn it back on.
+if not defined PSX_OVERLAY_AUTOCOMPILE_OFF set "PSX_OVERLAY_AUTOCOMPILE_OFF=1"
 if not exist "build-game\BugsBunnyTaz_Recompiled.exe" goto :missing
 start "" "build-game\BugsBunnyTaz_Recompiled.exe" --game "%CD%\build-game\game_3p.toml" --disc "%CD%\disc\BugsBunnyTaz_TimeBusters_USA.cue" --memcard-dir "%CD%\saves"
 exit /b 0

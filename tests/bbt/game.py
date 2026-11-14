@@ -66,11 +66,12 @@ DEFAULT_PACKAGE = "bbt.third-character"
 
 
 # Features the manifests switch on by default (2026-11-08: Quick start, the
-# own view, the third player). A run selects exactly what it names: these
-# are written as off unless named, so every test keeps the selection it was
-# written for. "_defaults": True leaves the manifests' defaults alone (the
-# tests of the defaults themselves).
-DEFAULT_ON = ("p3", "bbt.own-view/two-views", "bbt.quick-start/quick-start")
+# own view, the third player; 2026-11-10: the Turkish flag). A run selects
+# exactly what it names: these are written as off unless named, so every
+# test keeps the selection it was written for. "_defaults": True leaves the
+# manifests' defaults alone (the tests of the defaults themselves).
+DEFAULT_ON = ("p3", "bbt.own-view/two-views", "bbt.quick-start/quick-start",
+              "bbt.decor/turkish-flag")
 # Options whose default changed with that, kept as the tests were written:
 # the third player appears only with one ("auto"), the own view keeps the
 # shared screen on one PC ("shared"), and Quick start goes straight to the

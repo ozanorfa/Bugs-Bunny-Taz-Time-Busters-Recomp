@@ -23,7 +23,8 @@ ROW_9 = "......##........####.........."   # crescent and star, flag row 9
 class TurkishFlag(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        start_run(cls, config.game_build(), "decor", {"bbt.quick-start/quick-start": True})
+        start_run(cls, config.game_build(), "decor",
+                  {"bbt.quick-start/quick-start": True, "bbt.decor/turkish-flag": True})
 
     def test_1_the_flag_is_in_granwichs_wall_texture(self):
         c, p = self.c, self.p

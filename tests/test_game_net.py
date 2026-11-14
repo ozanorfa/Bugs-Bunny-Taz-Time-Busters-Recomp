@@ -285,8 +285,19 @@ class NetplayWithMods(unittest.TestCase):
             for _ in range(10):                               # the opening dialogs
                 c.press(pad("cross")); c.wait_frames(150)
             record = int(third.client.mod_cmd("bbt.p3", "show")["record"], 16)
+            # Each peer sees the press once its input has arrived: D frames
+            # plus the transport, more when a peer runs behind (a loaded
+            # Mac; on 2026-11-14 the host still read its prediction, 0,
+            # 10 frames after the press). Until then a rollback peer shows
+            # the predicted input, so wait for it on every peer.
             third.client.hold(pad("right")); c.wait_frames(10)
-            held = [struct.unpack_from("<H", pe.client.read(record, 4), 2)[0] for pe in m.peers]
+
+            def seat2_input(pe):
+                return struct.unpack_from("<H", pe.client.read(record, 4), 2)[0]
+            held = []
+            for pe in m.peers:
+                pe.client.wait_until(lambda pe=pe: seat2_input(pe) == 0x2000, 120, 2)
+                held.append(seat2_input(pe))
             third.client.release(); c.wait_frames(20)
             self.assertEqual(held, [0x2000] * 3, "seat 2's Right is not in the third input record")
             start = [clone_pos(pe) for pe in m.peers]

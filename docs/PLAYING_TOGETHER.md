@@ -145,6 +145,11 @@ a room the host's Mods count for everyone). With a strong PC you can try a sharp
 from a Command Prompt in `C:\RecompDev\BugsBunnyTazRecomp` with
 `set PSX_GL_MAX_DIM=4096` and then `windows\Play.bat`.
 
+The start files also turn off the runtime compiler for game code
+(`PSX_OVERLAY_AUTOCOMPILE_OFF=1`). Setup.bat compiles the game code once,
+our tests all run without that compiler, and while you play it would only
+cost CPU.
+
 ## The rules of the three-player game
 
 - Daffy is a third hero: □ is his attack (a kick; it hits like Taz's
