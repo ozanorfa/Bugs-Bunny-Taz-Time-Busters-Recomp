@@ -231,9 +231,18 @@ What the player's PC does (`START_HERE.txt`; untested on Windows):
    - `generate` (checks the disc's digests, copies it into `disc/`);
    - `rebuild` into `build-game` with
      `-DBBT_MAX_PLAYERS=5 -DPSX_NETPLAY=ON -DRNET_ENABLE_ICE=OFF`.
-4. A desktop shortcut **Bugs Bunny and Taz** runs `windows/Play.bat`. That
-   starts `build-game` with the staged 3-player config, the copied disc and
-   the `saves` folder.
+4. A desktop shortcut **Bugs Bunny and Taz** runs `windows/Play_with_log.bat`
+   in a normal window (since 2026-11-16; a minimized one might start the
+   game minimized too; `windows/Play.bat` is the same start without a log;
+   a second start while the game is open only says so). That starts `build-game` with the staged 3-player
+   config, the copied disc and the `saves` folder, the game's output going to
+   `logs\last_run.log`. When the game closes it zips that log,
+   `psx_last_run_report.json`, `SOURCE_VERSION` and, when this run wrote one, `psx_crash.txt`
+   (an older one is moved to `logs\previous_crash.txt` before the start) into
+   `reports\BugsBunnyTaz_<COMPUTERNAME>_<yyyyMMdd-HHmmss>.zip` (PowerShell
+   `Compress-Archive`; the newest 20 kept), appends the exit code to the log,
+   and opens Explorer on the zip. Both start files set
+   `PSX_NET_LIVENESS_MS=5000` (BUGS #61).
 5. An update is the new ZIP's `Setup.bat`. It copies over the old folder;
    saves, settings, the disc path and the builds stay.
 

@@ -12,8 +12,10 @@ him; his HUD panel and the hit / invincibility rule work as with the
 enemy; a deadly hit takes him out; his attack (Taz's spin, his only
 attack) is Bugs' □ attack drawn on him, with no tornado, and still hits;
 his moves make Bugs' sounds, or none of Taz's with sounds = "quiet"
-(NOTES.md "Daffy's spin and sounds"). Screenshots go to
-build-tests/out/daffy/."""
+(NOTES.md "Daffy's spin and sounds"); the game's package (script
+action 161, func_8004E908) brings him back beside it, with an out Bugs or
+on his own (BUGS.md #62); with comeback = "auto" (the default) he comes
+back by himself 5 s after he is out. Screenshots go to build-tests/out/daffy/."""
 from __future__ import annotations
 
 import struct
@@ -25,7 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
 from bbt.client import pad  # noqa: E402
 from bbt.game import three_player_toml  # noqa: E402
-from test_game_ownview3 import CLIP_PASVISIBLE, P3_SCREEN_FACE, check_p3_panel, hit  # noqa: E402
+from test_game_ownview3 import (CLIP_PASVISIBLE, DEATH, HERO_DOWN, LIVES, P3_SCREEN_FACE,  # noqa: E402
+                                check_p3_panel, flat, hit)
 from test_game_stock import moved, start_run  # noqa: E402
 
 A3 = "bbt.third-character.p3-actor."
@@ -223,6 +226,134 @@ class Daffy(unittest.TestCase):
             seen.add(self.anim())
         self.assertIn(DEATH_ANIM, seen, f"animations seen {sorted(hex(s) for s in seen)}")
         self.assertTrue(c.wait_until(lambda: c.u16(a + 0x6E) & CLIP_PASVISIBLE, 600, 5), "not taken out")
+        self.reached.add("daffy out")
+
+    def back_by_package(self, a: int, at: int) -> None:
+        """The game's package action for actor `at` (debug command, run at
+        the next actor pass); Daffy is then back beside it and moves again."""
+        c, p = self.c, self.p
+        before = self.counters().get("back_package", 0)
+        c.mod_cmd("bbt.p3actor", f"package {at:08X}")
+        self.assertTrue(c.wait_until(lambda: not c.u16(a + 0x6E) & CLIP_PASVISIBLE, 60, 1),
+                        "the package did not bring Daffy back")
+        c.wait_frames(30)
+        self.assertEqual(self.counters().get("back_package", 0), before + 1)
+        self.assertEqual(c.s16(a + 0x3C), 6)
+        self.assertFalse(c.u32(a + 0x20) & DEATH)
+        self.assertLess(flat(p.pos(a), p.pos(at)), 400, "Daffy is not beside the package")
+        x0 = p.pos(a)
+        self.seat2(pad("up")); c.wait_frames(40); self.seat2(None); c.wait_frames(10)
+        self.assertGreater(moved(x0, p.pos(a)), 32, "seat 2 does not move Daffy again")
+
+    def test_6_a_package_brings_him_back_with_bugs(self):
+        """Daffy out (test 5), then Bugs: the package brings Bugs back (the
+        game's own step: player 2 after the swap, at the package, nobody out,
+        no life lost) and Daffy beside it."""
+        self.need("daffy out")
+        c, p = self.c, self.p
+        a, bugs, taz = self.clone(), p.actor(1), p.actor(2)
+        lives = c.u8(LIVES)
+        hit(c, bugs)
+        self.assertTrue(c.wait_until(lambda: c.u8(HERO_DOWN) & 0x01, 600, 5), "Bugs did not go out")
+        self.assertTrue(c.u16(a + 0x6E) & CLIP_PASVISIBLE, "Daffy came back too early")
+        self.back_by_package(a, taz)
+        self.assertEqual(c.u8(HERO_DOWN) & 0x33, 0, "Bugs is still out")
+        self.assertEqual(c.s16(bugs + 0x3C), 6)
+        self.assertEqual(c.u8(LIVES), lives, "the package cost a life")
+        self.game.shot("6_package")
+        self.reached.add("package")
+
+    def test_7_a_package_with_only_daffy_out(self):
+        """Only Daffy out: the package brings him back; Bugs and Taz and the
+        lives are as they were."""
+        self.need("package")
+        c, p = self.c, self.p
+        a, bugs, taz = self.clone(), p.actor(1), p.actor(2)
+        c.wait_until(lambda: not c.u32(a + 0x28) & 0x200, 900, 10)   # the last hit's invincibility
+        lives, hb, ht = c.u8(LIVES), c.s16(bugs + 0x3C), c.s16(taz + 0x3C)
+        hit(c, a)
+        self.assertTrue(c.wait_until(lambda: c.u16(a + 0x6E) & CLIP_PASVISIBLE, 600, 5), "not taken out")
+        self.back_by_package(a, taz)
+        self.assertEqual(c.u8(HERO_DOWN) & 0x33, 0)
+        self.assertEqual((c.s16(bugs + 0x3C), c.s16(taz + 0x3C), c.u8(LIVES)), (hb, ht, lives))
+
+
+class DaffyComesBack(unittest.TestCase):
+    """comeback = "auto" (the default since 2026-11-16): an out Daffy comes
+    back 5 s later (150 game frames, counted once per frame) next to a hero
+    in play, with no life lost. Three views (split screen), so the actor
+    pass runs three times a frame and only view 0's pass may count."""
+
+    @classmethod
+    def setUpClass(cls):
+        toml = config.out_dir() / "game_3p_daffy_back.toml"
+        three_player_toml(config.game_toml(), toml)
+        start_run(cls, config.p3_build(), "daffy_comeback",
+                  {"p3": {"enabled": True, "values": {"comeback": "auto"}},
+                   "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True}, toml=toml)
+
+    def need(self, stage: str) -> None:
+        if stage not in self.reached:
+            self.skipTest(f"an earlier stage ({stage}) failed")
+
+    def counters(self) -> dict:
+        return {k[len(A3):]: v for k, v in self.c.counters().items() if k.startswith(A3)}
+
+    def clone(self) -> int:
+        return self.c.u32(int(self.c.mod_cmd("bbt.p3actor", "show")["state"], 16) + 4)
+
+    def seat2(self, word: int | None) -> None:
+        self.c.mod_cmd("bbt.p3", "off" if word is None else f"{word:04X}")
+
+    def out_and_back(self, partner: int) -> int:
+        """Daffy dies; returns the frames (vblanks) from out to back, and
+        checks he is back next to `partner`, whole and moving."""
+        c, p = self.c, self.p
+        a = self.clone()
+        before = self.counters().get("back_timer", 0)
+        lives = c.u8(LIVES)
+        hit(c, a)
+        self.assertTrue(c.wait_until(lambda: c.u16(a + 0x6E) & CLIP_PASVISIBLE, 600, 1), "not taken out")
+        f0 = c.frame()
+        self.assertTrue(c.wait_until(lambda: not c.u16(a + 0x6E) & CLIP_PASVISIBLE, 900, 1),
+                        "Daffy did not come back by himself")
+        took = c.frame() - f0
+        c.wait_frames(10)
+        self.assertEqual(self.counters().get("back_timer", 0), before + 1)
+        self.assertEqual(c.s16(a + 0x3C), 6)
+        self.assertFalse(c.u32(a + 0x20) & DEATH)
+        self.assertEqual(c.u8(LIVES), lives, "his comeback cost a life")
+        self.assertLess(flat(p.pos(a), p.pos(partner)), 400, "not back next to the hero in play")
+        x0 = p.pos(a)
+        self.seat2(pad("up")); c.wait_frames(40); self.seat2(None); c.wait_frames(10)
+        self.assertGreater(moved(x0, p.pos(a)), 32, "seat 2 does not move Daffy again")
+        return took
+
+    def test_1_he_comes_back_after_five_seconds(self):
+        c, p = self.c, self.p
+        self.assertTrue(p.boot_to_language_select(), "no language screen")
+        self.assertTrue(p.language_to_title(), "no title")
+        self.assertTrue(p.title_to_two_player_game(), "no 2-player Granwich")
+        self.assertTrue(c.wait_until(lambda: self.counters().get("spawned", 0) >= 1, 1200, 10), "not spawned")
+        for _ in range(10):                               # the opening dialogs
+            c.press(pad("cross")); c.wait_frames(150)
+        self.assertEqual(c.u8(0x8008DE00), 3, "not three views")
+        took = self.out_and_back(p.actor(2))
+        print(f"\n    back after {took} vblanks", flush=True)
+        # 150 game frames at 0.44-0.5 a vblank (three views; test_game_ownview3 test 3)
+        self.assertGreaterEqual(took, 280, "back too soon: counted more than once a frame?")
+        self.assertLessEqual(took, 400, "back too late")
+        self.reached.add("back")
+
+    def test_2_next_to_bugs_when_taz_is_out(self):
+        self.need("back")
+        c, p = self.c, self.p
+        bugs, taz = p.actor(1), p.actor(2)
+        c.wait_until(lambda: not c.u32(self.clone() + 0x28) & 0x200, 900, 10)   # the last hit's invincibility
+        hit(c, taz)
+        self.assertTrue(c.wait_until(lambda: c.u8(HERO_DOWN) & 0x02, 600, 5), "Taz did not go out")
+        self.out_and_back(bugs)
+        self.assertEqual(c.u8(HERO_DOWN) & 0x02, 0x02, "Taz came back with Daffy")
 
 
 class DaffyQuiet(unittest.TestCase):

@@ -258,19 +258,19 @@ class GameRunHelpers(unittest.TestCase):
         t = tomllib.loads(text)
         self.assertEqual(t["format_version"], 2)
         self.assertEqual(t["package"], [{"id": "bbt.third-character"}, {"id": "bbt.own-view"},
-                                        {"id": "bbt.quick-start"}])
+                                        {"id": "bbt.quick-start"}, {"id": "bbt.decor"}])
         # the features on by default are written as off unless named
         self.assertEqual({(f["package_id"], f["id"]): f["enabled"] for f in t["feature"]},
                          {("bbt.third-character", "trca01"): True, ("bbt.third-character", "swap-test"): False,
                           ("bbt.third-character", "p3"): False, ("bbt.own-view", "two-views"): False,
-                          ("bbt.quick-start", "quick-start"): False})
+                          ("bbt.quick-start", "quick-start"): False, ("bbt.decor", "turkish-flag"): False})
         self.assertEqual(tomllib.loads(game.state_toml({"_defaults": True})), {"format_version": 2})
         # other packages and option values, as the runtime writes them
         t = tomllib.loads(game.state_toml({
             "trca01": True,
             "bbt.quick-start/quick-start": {"enabled": True, "values": {"skip_intro": "false"}}}))
         self.assertEqual(t["package"], [{"id": "bbt.third-character"}, {"id": "bbt.quick-start"},
-                                        {"id": "bbt.own-view"}])
+                                        {"id": "bbt.own-view"}, {"id": "bbt.decor"}])
         qs = [f for f in t["feature"] if f["package_id"] == "bbt.quick-start"]
         self.assertEqual(qs, [{"package_id": "bbt.quick-start", "id": "quick-start", "enabled": True,
                                "values": {"language": "ask", "skip_title": "false", "auto_players": "false",
@@ -278,10 +278,11 @@ class GameRunHelpers(unittest.TestCase):
         # options the tests were written with; a named option wins
         t = tomllib.loads(game.state_toml({"p3": True, "bbt.own-view/two-views": True}))
         vals = {f["id"]: f.get("values") for f in t["feature"]}
-        self.assertEqual(vals["p3"], {"appear": "always"})
+        self.assertEqual(vals["p3"], {"appear": "always", "comeback": "team"})
         self.assertEqual(vals["two-views"], {"offline": "split"})
         t = tomllib.loads(game.state_toml({"p3": {"enabled": True, "values": {"appear": "auto"}}}))
-        self.assertEqual([f.get("values") for f in t["feature"] if f["id"] == "p3"], [{"appear": "auto"}])
+        self.assertEqual([f.get("values") for f in t["feature"] if f["id"] == "p3"],
+                         [{"appear": "auto", "comeback": "team"}])
         t = tomllib.loads(game.state_toml({"_defaults": True, "p3": True}))
         self.assertEqual(t["feature"], [{"package_id": "bbt.third-character", "id": "p3", "enabled": True}])
 

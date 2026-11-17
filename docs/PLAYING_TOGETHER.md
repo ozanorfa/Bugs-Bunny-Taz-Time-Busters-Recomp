@@ -47,7 +47,8 @@ player full screen with its own camera.
    it and send it along.
 5. Start **Bugs Bunny and Taz** from the desktop (its icon is the game's
    logo, which Setup takes from your disc by running the game hidden for a
-   minute). Your controller: on the first screen, card **PLAYER 1**,
+   minute). A small black window opens behind the game: leave it open, it
+   keeps the game's log (`windows\Play_with_log.bat`). Your controller: on the first screen, card **PLAYER 1**,
    choose it below the controller picture (scroll the card down;
    **Configure** changes the buttons).
    - **Two or three players on one PC:** choose a controller on the
@@ -82,7 +83,9 @@ What is on out of the box (Mods page, all on by default):
   at the next level start, so press before START GAME to have him in the
   first level. With two players he stays away. Options:
   Character (Daffy, or the Transylvania enemy), Daffy's sounds (Bugs' steps,
-  jumps and attack; Taz's; or none of Taz's).
+  jumps and attack; Taz's; or none of Taz's), and when Daffy is out (back
+  next to Taz after 5 seconds, the default; or the game's rule for Bugs and
+  Taz).
 
 In a LAN room only the host's Mods count: the room plays the host's
 selection on every PC, and the guests' own selections are left as they were.
@@ -148,15 +151,20 @@ from a Command Prompt in `C:\RecompDev\BugsBunnyTazRecomp` with
 The start files also turn off the runtime compiler for game code
 (`PSX_OVERLAY_AUTOCOMPILE_OFF=1`). Setup.bat compiles the game code once,
 our tests all run without that compiler, and while you play it would only
-cost CPU.
+cost CPU. And they let a PC go silent for 5 s before a match ends
+(`PSX_NET_LIVENESS_MS=5000`; the framework's default is 1.5 s, and over
+Radmin VPN matches ended after a few minutes with no PC crashed, BUGS #61).
 
 ## The rules of the three-player game
 
 - Daffy is a third hero: □ is his attack (a kick; it hits like Taz's
-  spin), enemies go for him too, he has his own health panel (under
-  Bugs'), and he follows the game's rule for Bugs and Taz:
-  when he loses all his health he is out until Bugs and Taz have both gone
-  down and the team comes back (a life lost).
+  spin), enemies go for him too, and he has his own health panel (under
+  Bugs'). When he loses all his health he is out for 5 seconds and then
+  comes back next to Taz (next to Bugs if Taz is out), with full health
+  and no life lost. A package that brings a player back brings him back
+  too. With the option "When Daffy is out" set to the game's rule, he
+  waits like Bugs and Taz instead: until both of them have gone down and
+  the team comes back (a life lost), or a package.
 - A player who is out watches a teammate who is still playing.
 
 ## Updating
@@ -170,11 +178,11 @@ recompiler's inputs changed). Everyone in a match needs the same version.
 
 | What you see | What to do |
 |---|---|
-| The game closes by itself (for example at a level change) | Before starting it again, send `C:\RecompDev\BugsBunnyTazRecomp\psx_last_run_report.json` (the next start writes over it) and `logs\last_run.log` if you played with `Play_with_log.bat`. A rare stop at a level change is known (BUGS #60). |
+| The game closes by itself, or in a match everyone is sent back to the room with "The match ended: ..." | One PC's problem (a crash, a stall, a pause of its connection longer than the start files' 5 s) ends the match on every PC, so note the message each PC shows. Every PC closes the game before the next match. When the game closes, a folder opens with one file selected, `reports\BugsBunnyTaz_<PC name>_<date>-<time>.zip` in `C:\RecompDev\BugsBunnyTazRecomp`: every PC sends that file (it holds `logs\last_run.log`, `psx_last_run_report.json`, the installed version `SOURCE_VERSION` and, only if the game stopped on an error, `psx_crash.txt`). The newest 20 are kept. A rare stop at a level change is known (BUGS #60). |
 | Setup stops | Select all the text in its window, copy it and send it along. |
 | Setup stops while downloading ("504", no internet) | Run Setup.bat again later. |
 | "No .bin file next to that .cue" | Put the dump's `.cue` and `.bin` in one folder. |
 | Setup says the disc digests do not match | It is not the original USA disc (or a damaged dump). |
 | "Content differs between peers" or a version message in the room | Not everyone has the same version: everyone runs the newest ZIP's Setup.bat. |
 | "No response" on Join Direct | Press Join Direct again; then check the host's firewall (step 6 above). |
-| Something else in a match (lag, choppy sound, a freeze) | Everyone starts the game with `C:\RecompDev\BugsBunnyTazRecomp\windows\Play_with_log.bat` instead of the desktop shortcut, plays, and sends `logs\last_run.log` afterwards (it holds the netplay delay, rollbacks and errors). |
+| Something else in a match (lag, choppy sound, a freeze) | Play on, close the game, and everyone sends the report file that opens (the log in it holds the netplay delay, rollbacks and errors). |

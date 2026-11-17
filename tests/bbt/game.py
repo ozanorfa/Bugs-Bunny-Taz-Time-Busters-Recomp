@@ -73,12 +73,14 @@ DEFAULT_PACKAGE = "bbt.third-character"
 DEFAULT_ON = ("p3", "bbt.own-view/two-views", "bbt.quick-start/quick-start",
               "bbt.decor/turkish-flag")
 # Options whose default changed with that, kept as the tests were written:
-# the third player appears only with one ("auto"), the own view keeps the
+# the third player appears only with one ("auto") and comes back 5 s after
+# it is out ("auto", 2026-11-16; the tests keep the game's rule, "team"),
+# the own view keeps the
 # shared screen on one PC ("shared"), and Quick start goes straight to the
 # main menu with the players from the controllers (the tests walk the
 # language screen, PRESS START and the ONE / TWO PLAYERS menu themselves).
 # A test that names the option wins.
-TEST_OPTIONS = {"p3": {"appear": "always"}, "bbt.own-view/two-views": {"offline": "split"},
+TEST_OPTIONS = {"p3": {"appear": "always", "comeback": "team"}, "bbt.own-view/two-views": {"offline": "split"},
                 "bbt.quick-start/quick-start": {"language": "ask", "skip_title": "false",
                                                 "auto_players": "false"}}
 

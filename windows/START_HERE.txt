@@ -29,9 +29,10 @@ FIRST START (once)
    desktop, with the game's logo as its icon (Setup runs the game hidden
    for a minute to take it from your disc). If it stops while downloading
    (the site is busy, for example "504"), run Setup.bat again later.
-5. Start "Bugs Bunny and Taz" from the desktop. Your controller: on the
-   first screen, card PLAYER 1, choose it below the controller picture
-   (scroll the card down; Configure changes the buttons). Then PLAY.
+5. Start "Bugs Bunny and Taz" from the desktop. A small black window
+   opens behind the game: leave it open, it keeps the game's log. Your controller: on the first screen, card
+   PLAYER 1, choose it below the controller picture (scroll the card
+   down; Configure changes the buttons). Then PLAY.
 6. Two or three players on ONE PC: choose a controller on the PLAYER 2 and
    PLAYER 3 tabs as well (nothing is chosen for them by itself; with only
    one controller the game starts for one player). A keyboard player needs
@@ -88,13 +89,13 @@ IF SOMETHING GOES WRONG
 - Setup was closed (or the disk was full) while it copied the disc: delete
   the folder C:\RecompDev\BugsBunnyTazRecomp\disc, then run Setup.bat
   again.
-- The game closes by itself (for example at a level change): before you
-  start it again, send C:\RecompDev\BugsBunnyTazRecomp\psx_last_run_report.json
-  (the next start writes over it) and, if you played with
-  Play_with_log.bat, logs\last_run.log.
-- A match lags, the sound is choppy or the game stops: start the game with
-  windows\Play_with_log.bat (in C:\RecompDev\BugsBunnyTazRecomp) instead
-  of the desktop shortcut, play, then send logs\last_run.log.
+- The game closes by itself, a match ends ("The match ended: ..."), it
+  lags or the sound is choppy: close the game. A folder then opens with
+  ONE file selected (BugsBunnyTaz_<PC name>_<date>-<time>.zip, in
+  C:\RecompDev\BugsBunnyTazRecomp\reports): send that file. In a match
+  EVERY player sends theirs, and says what the screen showed. One PC's
+  problem ends the match on every PC, so everyone closes the game before
+  the next match.
 - Online, everyone sets only their own PLAYER 1; PLAYER 2 and 3 are for
   several players on one PC.
 - "Content differs" or a version message in the room: not everyone has the

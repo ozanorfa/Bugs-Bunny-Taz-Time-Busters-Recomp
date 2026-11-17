@@ -124,9 +124,13 @@ if errorlevel 1 goto :failed
 if not exist "%DEST%\build-game\BugsBunnyTaz_Recompiled.exe" goto :failed
 
 rem ---- 5. a desktop shortcut (the launcher: play, settings, netplay room) ---
+rem It starts windows\Play_with_log.bat in a normal window (WindowStyle 1, set
+rem explicitly: CreateShortcut keeps an existing .lnk's properties): every run
+rem keeps a log, and when the game closes the files to send are in one report
+rem file. A minimized window could start the game minimized too.
 set "ICON=%DEST%\build-game\BugsBunnyTaz_Recompiled.exe,0"
 if exist "%DEST%\BugsBunnyTaz.ico" set "ICON=%DEST%\BugsBunnyTaz.ico"
-powershell -NoProfile -Command "$w=New-Object -ComObject WScript.Shell; $l=$w.CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Bugs Bunny and Taz.lnk'); $l.TargetPath='%DEST%\windows\Play.bat'; $l.WorkingDirectory='%DEST%'; $l.IconLocation='%ICON%'; $l.Save()" >nul 2>nul
+powershell -NoProfile -Command "$w=New-Object -ComObject WScript.Shell; $l=$w.CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Bugs Bunny and Taz.lnk'); $l.TargetPath='%DEST:'=''%\windows\Play_with_log.bat'; $l.WorkingDirectory='%DEST:'=''%'; $l.WindowStyle=1; $l.IconLocation='%ICON:'=''%'; $l.Save()" >nul 2>nul
 
 echo.
 echo   Done. Start the game with "Bugs Bunny and Taz" on your desktop

@@ -71,9 +71,15 @@
  * and his sounds are Bugs' (sound_start_wrap, option "sounds"); NOTES.md
  * "Daffy's spin and sounds".
  *
+ * Its death: out, then back next to a hero in play after 5 s (option
+ * "comeback" = "auto", the default), or, with "team", the game's rule for
+ * Bugs and Taz: out until the team respawns (watch_team); a package brings
+ * it back in both cases (package_wrap).
+ *
  * Tests: {"cmd":"mod_cmd","name":"bbt.p3actor","args":"show"|"group <n>"|
- * "ref-third off"|"ref-third on"} (the last two switch the codes 4-7 rule,
- * for an A/B in tests only),
+ * "ref-third off"|"ref-third on"|"package <hex actor>"} ("ref-third"
+ * switches the codes 4-7 rule, for an A/B; "package" runs the game's package
+ * action for that actor at the next actor pass; tests only),
  * counters bbt.third-character.p3-actor.*, tests/test_game_p3_actor.py.
  */
 #include <stdint.h>
@@ -176,7 +182,11 @@
 #define ST_HIT       0x40u    /* the clone's own hit counter (Taz's is 0x8008DA0D) */
 #define ST_PREV_ANIM 0x44u    /* the clone's animation id after its last update (Daffy's attack sound) */
 #define ST_P3_JOINED 0x48u    /* one PC: seat 2 has pressed a button (the third player joined) */
-#define ST_LAST      ST_P3_JOINED
+#define ST_TEST_PACKAGE 0x4Cu /* tests only (debug command "package"): the actor to run the package action for */
+#define ST_OUT_FRAMES 0x50u   /* game frames since it went out (option "comeback" = "auto") */
+#define ST_LAST      ST_OUT_FRAMES
+#define COMEBACK_FRAMES 150u  /* 5 s at the game's 30 frames a second (0.5 per vblank, test_game_ownview3 test 3) */
+#define ADDR_VIEW_INDEX 0x8008DEA0u /* byte: the view FUN_80011AF0 is running (own_view.c) */
 #define STATE_MAGIC  0x33544242u
 
 
@@ -221,6 +231,7 @@ enum { SOUNDS_BUGS, SOUNDS_TAZ, SOUNDS_QUIET };
 static int g_sounds = SOUNDS_BUGS;
 /* Option "appear": 1 = always, 0 = only with a third player (the default). */
 static int g_appear_always;
+static int g_comeback_team;        /* option "comeback" = "team": out until the team respawns or a package */
 #define P3_SEAT_INDEX 2   /* the third player's seat (third_player.c) */
 
 /* psx_mod_counter_add keeps the name pointer: literal names only. */
@@ -370,6 +381,8 @@ static void read_options(void)
         g_sounds = strcmp(v, "taz") == 0 ? SOUNDS_TAZ : strcmp(v, "quiet") == 0 ? SOUNDS_QUIET : SOUNDS_BUGS;
     g_appear_always = psx_mod_option_value("bbt.third-character", "p3", "appear", v, sizeof v) &&
                       strcmp(v, "always") == 0;
+    g_comeback_team = psx_mod_option_value("bbt.third-character", "p3", "comeback", v, sizeof v) &&
+                      strcmp(v, "team") == 0;
     if (g_daffy_char) {
         /* his own size: a little shorter than Bugs, as in the cartoons; the
          * size option is the enemy's */
@@ -628,26 +641,26 @@ static void spawn(CPUState* cpu, uint32_t taz)
 /* The third player's death follows the game's rule for Bugs and Taz (user's
  * choice, 2026-11-07): from the end of its death it is out (not listed by
  * the actor pass: no update, no draw), also in the next levels, until the
- * team respawns. The team respawns when Bugs and Taz are both down: the
- * second death's step (FUN_80022510) or a level exit with both down
- * (FUN_8002A384) takes a life and clears both down bits of 0x800100A2 at
- * once. The third player then comes back next to Taz with full health. */
+ * team respawns, or a package brings an out hero back (package_wrap). The
+ * team respawns when Bugs and Taz are both down: the second death's step
+ * (FUN_80022510) or a level exit with both down (FUN_8002A384) takes a life
+ * and clears both down bits of 0x800100A2 at once. The third player then
+ * comes back next to Taz with full health. */
 static void take_out(uint32_t a)
 {
     psx_mod_write_half(a + A_CLIP, (uint16_t)(psx_mod_read_half(a + A_CLIP) | CLIP_PASVISIBLE));
 }
 
-static void place_next_to_taz(uint32_t a)
+/* Puts a SPAWN_GAP from ref's position (+0xFC), on the side away from
+ * `away` (a straight +x step when away is not an actor or at ref). */
+static void place_beside(uint32_t a, uint32_t ref, uint32_t away)
 {
-    const uint32_t taz = psx_mod_read_word(ADDR_TAZ_HERO), bugs = psx_mod_read_word(ADDR_BUGS_HERO);
-    if (!in_main_ram(taz) || taz == a)
-        return;
-    const int tx = (int16_t)psx_mod_read_half(taz + A_POS), ty = (int16_t)psx_mod_read_half(taz + A_POS + 2);
-    const int tz = (int16_t)psx_mod_read_half(taz + A_POS + 4);
+    const int tx = (int16_t)psx_mod_read_half(ref + A_POS), ty = (int16_t)psx_mod_read_half(ref + A_POS + 2);
+    const int tz = (int16_t)psx_mod_read_half(ref + A_POS + 4);
     int dx = SPAWN_GAP, dz = 0;
-    if (in_main_ram(bugs)) {
-        const int vx = tx - (int16_t)psx_mod_read_half(bugs + A_POS);
-        const int vz = tz - (int16_t)psx_mod_read_half(bugs + A_POS + 4);
+    if (in_main_ram(away)) {
+        const int vx = tx - (int16_t)psx_mod_read_half(away + A_POS);
+        const int vz = tz - (int16_t)psx_mod_read_half(away + A_POS + 4);
         const int ax = vx < 0 ? -vx : vx, az = vz < 0 ? -vz : vz;
         const int len = ax > az ? ax : az;
         if (len > 0) {
@@ -667,13 +680,41 @@ static void place_next_to_taz(uint32_t a)
     }
 }
 
-static void third_player_back(uint32_t a)
+static void place_next_to_taz(uint32_t a)
+{
+    const uint32_t taz = psx_mod_read_word(ADDR_TAZ_HERO), bugs = psx_mod_read_word(ADDR_BUGS_HERO);
+    if (!in_main_ram(taz) || taz == a)
+        return;
+    place_beside(a, taz, bugs);
+}
+
+/* Next to Taz if he is in play, else next to Bugs if he is; 0 when neither
+ * is (an out hero keeps DEATH and stands where he fell). */
+static int place_next_to_partner(uint32_t a)
+{
+    const uint32_t taz = psx_mod_read_word(ADDR_TAZ_HERO), bugs = psx_mod_read_word(ADDR_BUGS_HERO);
+    const int taz_in = in_main_ram(taz) && taz != a && !(psx_mod_read_word(taz + A_ACTION) & DEATH_FLAG);
+    const int bugs_in = in_main_ram(bugs) && !(psx_mod_read_word(bugs + A_ACTION) & DEATH_FLAG);
+    if (taz_in)
+        place_beside(a, taz, bugs);
+    else if (bugs_in)
+        place_beside(a, bugs, taz);
+    return taz_in || bugs_in;
+}
+
+/* In play again with full health (where it stands is the caller's). */
+static void revive(uint32_t a)
 {
     psx_mod_write_half(a + A_HEALTH, FULL_HEALTH);
     psx_mod_write_word(a + A_ACTION, psx_mod_read_word(a + A_ACTION) & ~DEATH_FLAG);
     psx_mod_write_half(a + A_CLIP, (uint16_t)(psx_mod_read_half(a + A_CLIP) & ~CLIP_PASVISIBLE));
     psx_mod_write_word(a + A_SPEED, 0);
     psx_mod_write_half(a + A_SPEED + 4u, 0);
+}
+
+static void third_player_back(uint32_t a)
+{
+    revive(a);
     place_next_to_taz(a);
 }
 
@@ -684,6 +725,7 @@ static void watch_team(uint32_t a)
          * its own down bits on that path, FUN_800110C8) */
         st_set(ST_OUT, 0);
         st_set(ST_TEAM_DOWN, 0);
+        st_set(ST_OUT_FRAMES, 0);
         return;
     }
     const uint8_t down = psx_mod_read_byte(ADDR_HERO_DOWN);
@@ -699,6 +741,56 @@ static void watch_team(uint32_t a)
             count("back", 1);
         }
     }
+    /* Option "comeback" = "auto" (the default since 2026-11-16, user: "Yes,
+     * on his own"): the third player does not wait for the team, it comes
+     * back COMEBACK_FRAMES game frames after it went out, next to a hero in
+     * play. Counted once per frame: the actor pass runs once per view, with
+     * the view index 0x8008DEA0 (FUN_80011AF0, NOTES.md "Phase 4 - third
+     * actor"), so only view 0's pass counts. Not while both heroes are down
+     * (the team respawn brings it back). Guest state only. */
+    if (!g_comeback_team && a && st_get(ST_OUT) && !st_get(ST_TEAM_DOWN) &&
+        psx_mod_read_byte(ADDR_VIEW_INDEX) == 0) {
+        const uint32_t n = st_get(ST_OUT_FRAMES) + 1u;
+        st_set(ST_OUT_FRAMES, n);
+        if (n >= COMEBACK_FRAMES && place_next_to_partner(a)) {
+            st_set(ST_OUT, 0);
+            revive(a);
+            count("back_timer", 1);
+        }
+    }
+}
+
+/* The package (Ghidra, NOTES.md "The third player's death"): script action
+ * 161 of the action table 0x800815EC, func_8004E908(obj). If player 2 (the
+ * out hero after the swap) has DEATH, he is put at obj's position with
+ * health 6 and nobody out (0x800100A2 &= 0xFC); no life is lost. It runs on
+ * an event, not every frame: no call in a minute of random play in Granwich,
+ * with or without a hero out (fntrace, 2026-11-16). Since the third player
+ * came back only with the team respawn, a package that brought Bugs or Taz
+ * back left Daffy out (user's Windows test 2026-11-16, BUGS.md #62). Now
+ * whenever the game runs it while the third player is out (or still in its
+ * death), it comes back too, beside obj, away from player 1. Guest state
+ * only, the same on every peer. */
+#define ADDR_PACKAGE     0x8004E908u
+/* lui a1,0x8009 / lw a1,-0x22F8(a1) / nop / lw v0,0x20(a1) */
+static const uint32_t kPackageGuard[4] = {0x3C058009u, 0x8CA5DD08u, 0x00000000u, 0x8CA20020u};
+
+static int package_wrap(CPUState* cpu)
+{
+    const uint32_t obj = cpu->gpr[GPR_A0];
+    const uint32_t a = bbt_p3_actor();
+    if (!a)
+        return 0;
+    func_override_call_original(cpu);
+    count("package", 1);
+    const int dying = (psx_mod_read_word(a + A_ACTION) & DEATH_FLAG) != 0;
+    if (!in_main_ram(obj) || (!st_get(ST_OUT) && !dying))
+        return 1;
+    st_set(ST_OUT, 0);
+    revive(a);
+    place_beside(a, obj, psx_mod_read_word(ADDR_P1));
+    count("back_package", 1);
+    return 1;
 }
 
 /* FUN_80029424(code, actor, ...): the actor a script means by a reference
@@ -850,6 +942,14 @@ static int actor_pass_wrap(CPUState* cpu)
         psx_mod_write_word(a + A_TYPE, psx_mod_read_word(a + A_TYPE) | HERO_FLAG);
         st_set(ST_HIDDEN, 0);
     }
+    /* tests only (debug command "package"): the game's own package action
+     * for the actor named, after the pass has registered players 1 and 2,
+     * as a script in the actors' updates runs it */
+    const uint32_t test_obj = st_get(ST_TEST_PACKAGE);
+    if (test_obj && !psx_mod_local_view_scope()) {
+        st_set(ST_TEST_PACKAGE, 0);
+        (void)psx_mod_call_guest(cpu, ADDR_PACKAGE, cpu->gpr[31], test_obj, 0, 0, 0);
+    }
     return 1;
 }
 
@@ -938,7 +1038,8 @@ uint32_t bbt_p3_actor(void)
  * Taz out (taken out of the update list while alive) and, called again every
  * death loop, took a life each time (measured: lives 3 -> 1 in 8 s; BUGS
  * #23). The clone's death is its own: none of that runs for it; the third
- * player is out until the team respawns (watch_team). */
+ * player is out until the comeback time, the team respawn (watch_team) or
+ * a package (package_wrap). */
 /* addiu sp,sp,-0x20 / sw s0,0x18(sp) / move s0,a1 / lui a1,0x8001 */
 static const uint32_t kDeathDoneGuard[4] = {0x27BDFFE0u, 0xAFB00018u, 0x00A08021u, 0x3C058001u};
 
@@ -951,6 +1052,7 @@ static int death_done_wrap(CPUState* cpu)
     psx_mod_write_half(a + A_SPEED + 4u, 0);
     if (!st_get(ST_OUT)) {
         st_set(ST_OUT, 1);
+        st_set(ST_OUT_FRAMES, 0);
         take_out(a);
         count("out", 1);
     }
@@ -1095,6 +1197,16 @@ static int p3actor_command(const char* args, char* reply, int cap)
         snprintf(reply, (size_t)cap, "{\"ok\":true,\"ref_third\":%s}", st_get(ST_REF_OFF) ? "false" : "true");
         return 1;
     }
+    if (args && strncmp(args, "package ", 8) == 0 && g_block) {
+        const uint32_t obj = (uint32_t)strtoul(args + 8, NULL, 16);
+        if (!in_main_ram(obj)) {
+            snprintf(reply, (size_t)cap, "{\"ok\":false,\"err\":\"not an actor address\"}");
+            return 0;
+        }
+        st_set(ST_TEST_PACKAGE, obj);
+        snprintf(reply, (size_t)cap, "{\"ok\":true,\"package\":\"0x%08X\"}", obj);
+        return 1;
+    }
     if (args && strncmp(args, "group ", 6) == 0) {
         const int g = atoi(args + 6);
         if (g_prepared != 1 || !g_tex_planned || g < 0 || g >= RT->tex.clut_count) {
@@ -1135,6 +1247,9 @@ PSX_MOD_CONSTRUCTOR(register_bbt_third_actor)
     (void)psx_mod_register_function_override(
         PLUGIN_ACTOR ":death-done", ADDR_DEATH_DONE,
         death_done_wrap, kDeathDoneGuard, 4, FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(
+        PLUGIN_ACTOR ":package", ADDR_PACKAGE,
+        package_wrap, kPackageGuard, 4, FO_CREDIT_SELF);
     (void)psx_mod_register_function_override(
         PLUGIN_ACTOR ":player-ref", ADDR_PLAYER_REF,
         player_ref_wrap, kPlayerRefGuard, 4, FO_CREDIT_SELF);
