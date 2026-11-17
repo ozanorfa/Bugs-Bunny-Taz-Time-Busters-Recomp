@@ -13,8 +13,9 @@ our mods"):
 - one peer with the mod and one without: the match never starts (both wait
   at tick 0 with "LAN content differs between peers");
 - both peers also on Quick start (defaults: no logos, no intro, short
-  loading screens, 2x CD speed): it acts on both peers alike and the
-  digests still agree.
+  loading screens, 2x CD speed) and the Turkish flag (bbt.decor: both
+  wall textures and the 6-pane window rewritten once on each peer): they
+  act on both peers alike and the digests still agree.
 - both peers on Quick start and "Two views" (bbt.own-view), each in a
   hidden OpenGL window: in Granwich every peer draws its own player's view
   full screen (psx_mod_render_local_view: the host Bugs' view 0, the guest
@@ -65,6 +66,8 @@ T = "bbt.third-character.trca01."
 Q = "bbt.quick-start."
 TRCA01 = {"trca01": True}
 QUICK = {"trca01": True, "bbt.quick-start/quick-start": True}
+QUICK_FLAG = {**QUICK, "bbt.decor/turkish-flag": True}
+DECOR = ("flag_texels", "flag_clut", "flag_far_texels", "flag_far_clut", "panes_texels")
 V = "bbt.own-view.two-views."
 # The enemy, not the default Daffy: these tests check what was verified with it.
 ENEMY = {"enabled": True, "values": {"character": "enemy"}}
@@ -157,7 +160,7 @@ class NetplayWithMods(unittest.TestCase):
 
     def test_3_quick_start_in_a_match(self):
         build = need_build()
-        with NetMatch(build, "net-quick-start", [QUICK, QUICK]) as m:
+        with NetMatch(build, "net-quick-start", [QUICK_FLAG, QUICK_FLAG]) as m:
             host, guest = m.peers
             c, p = host.client, Player(_Run(host.client))
             self.assertTrue(c.wait_until(lambda: p.level() == 2, 3000, 2), "no language screen")
@@ -180,6 +183,8 @@ class NetplayWithMods(unittest.TestCase):
                 self.assertEqual(got, {"logos_skipped": 1, "intro_skipped": 1, "cd_speed": 2},
                                  f"peer {peer.slot}")
                 self.assertGreaterEqual(cs.get(Q + "loading_shortened", 0), 1, f"peer {peer.slot}")
+                flag = {k: cs.get("bbt.decor." + k) for k in DECOR}
+                self.assertEqual(set(flag.values()), {1}, f"peer {peer.slot}: {flag}")
                 self.assertEqual(peer.status()["desync"], 0, f"peer {peer.slot}")
         compared, bad = m.compare_digests()
         last = max(set(host.digests()) & set(guest.digests()), default=0)

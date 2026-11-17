@@ -54,7 +54,7 @@ def keep_awake():
     (a sleeping Mac stretched a long run over the night in the Fighting Force
     session)."""
     tool = shutil.which("caffeinate")
-    return subprocess.Popen([tool, "-d", "-i", "-w", str(os.getpid())]) if tool else None
+    return subprocess.Popen([tool, "-u", "-d", "-i", "-w", str(os.getpid())]) if tool else None
 
 
 def rollbacks(log: Path) -> int:

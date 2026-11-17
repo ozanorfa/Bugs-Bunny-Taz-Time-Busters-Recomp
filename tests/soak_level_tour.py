@@ -73,7 +73,7 @@ def main(argv: list[str]) -> int:
     # macOS: no sleep during the tour (a sleeping Mac stalls the run)
     tool = shutil.which("caffeinate")
     if tool:
-        subprocess.Popen([tool, "-d", "-i", "-w", str(os.getpid())])
+        subprocess.Popen([tool, "-u", "-d", "-i", "-w", str(os.getpid())])
     out = config.out_dir() / "soak_tour"
     out.mkdir(parents=True, exist_ok=True)
     toml = three_player_toml(config.game_toml(), out / "game_3p.toml")
