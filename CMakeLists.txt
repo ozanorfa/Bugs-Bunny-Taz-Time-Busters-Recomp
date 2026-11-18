@@ -14,8 +14,9 @@ project(BugsBunnyTazRecomp LANGUAGES C CXX)
 # --- Opt-in product surfaces (OFF by default in the framework) -------------
 # Scaffold prompts / flags fill these. Without recomp-ui, PSX_RECOMP_UI is OFF.
 # The wizard (WIZARD_CMAKE_BLOCK / ENABLE_SETUP_WIZARD) is the first-run disc
-# picker; releases are compiled from the committed generated/ C, so it never
-# needs to generate or rebuild anything on a player's machine.
+# picker. This project does not commit generated/ (it is derived from the
+# disc): the players' ZIP generates and builds on each player's PC, and a
+# ready-built package is compiled from the packaging PC's own generated/ C.
 # recomp-ui submodule present (PSX_RECOMP_UI defaults ON).
 # Netplay (LAN / Direct IP) is a configure-time choice, not this file's:
 # configure a separate build with -DPSX_NETPLAY=ON -DRNET_ENABLE_ICE=OFF

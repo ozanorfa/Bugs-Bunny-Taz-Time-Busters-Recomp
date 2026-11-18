@@ -23,11 +23,10 @@ These files were created by psxrecomp's New Project Layout scaffold, or
 copied from psxrecomp. The template material in them stays under psxrecomp's
 license; this project's changes to them are under the MIT License.
 - `CMakeLists.txt`, `codegen_setup.c`, `codegen_setup.h`, `.gitignore`;
-- `scripts/package_release.sh`, `scripts/package_prebuilt_release.sh`;
+- `scripts/package_release.sh`;
 - `tools/sync_symbols.py`;
 - `packaging/` (`linux/AppRun`, `linux/bbt.desktop`, `release.toml`,
   `release/START_HERE.txt`);
-- `mods/preloaded/README.md`;
 - `assets/psxrecomp.ico`, `assets/psxrecomp.png`, `assets/psxrecomp.svg`
   (the framework's default app icon).
 

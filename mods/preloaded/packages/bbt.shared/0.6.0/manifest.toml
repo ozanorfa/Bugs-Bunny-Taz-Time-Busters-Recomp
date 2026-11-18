@@ -10,7 +10,7 @@ version = "0.6.0"
 # 0.<N>.0: N is the netplay compatibility number every bbt.* package shares
 # (and VERSION). Bump it in all of them on any change to simulation
 # behaviour: a LAN guest without the host's version is refused, so two
-# different builds cannot start a match (NOTES.md "Netplay compatibility").
+# different builds cannot start a match (docs/WINDOWS_AND_LAN.md, section 8).
 name = "Shared game hooks (internal)"
 author = "BugsBunnyTazRecomp project"
 description = "Internal: hooks shared by the Own View, Third Character and Decorations features. Turned on by them when needed."

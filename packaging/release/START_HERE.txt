@@ -1,5 +1,5 @@
 Bugs Bunny & Taz: Time Busters Recompiled @VERSION@
-(prebuilt developer package - the players' ZIP is tools/make_player_zip.py)
+(ready-built package)
 
 A native PC version of the PlayStation game, with Daffy Duck as a third
 playable character and up to three players, each on their own PC.
@@ -34,6 +34,10 @@ Nothing needs to be set in Mods. Out of the box:
 - Third player: Daffy Duck joins when a third player is there (three
   seated in a LAN room; on one PC, once Player 3 presses a button, from
   the next level start). With two players he stays away.
+- Decorations: a Turkish flag hangs from the windows of Granny's house.
+- The picture is drawn in true colour, without the PlayStation's dither
+  pattern. To bring it back: Mods -> Image Filtering, turn it on, then
+  Dithering = Native (PS1).
 
 PLAYING TOGETHER (over the internet with Radmin VPN, or on a home LAN)
 Details: PLAYING_TOGETHER.md. In short:

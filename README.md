@@ -14,6 +14,9 @@ by default:
 - the third player;
 - a Turkish flag at the windows of Granny's house.
 
+The picture is drawn in true colour, without the PlayStation's dither pattern
+(to bring it back: Mods -> Image Filtering, turn it on, Dithering = Native (PS1)).
+
 Players' guide: [docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md).
 
 **This repository holds no game data and no game code.** You need your own
@@ -30,8 +33,8 @@ on your own machine.
 
 ## Playing on Windows
 
-Players use a players' ZIP. It holds no game data and no game code. Each PC
-builds the game once from its own disc:
+Today players use a players' ZIP. It holds no game data and no game code.
+Each PC builds the game once from its own disc:
 1. Extract the ZIP.
 2. Double-click `Setup.bat`.
 3. Choose the disc once.
@@ -40,6 +43,10 @@ builds the game once from its own disc:
 The ZIP is made with `tools/make_player_zip.py`. See
 [windows/START_HERE.txt](windows/START_HERE.txt) and
 [docs/WINDOWS_AND_LAN.md](docs/WINDOWS_AND_LAN.md), section 8.
+
+A ready-built package (extract, point it at the disc, play) is planned to
+replace this. It will be shared privately with players, because it holds the
+compiled game.
 
 ## Building (developers)
 
@@ -77,6 +84,14 @@ sharing; see `psxrecomp/docs/RELEASING_A_TITLE.md`.
 
 `symbols.toml` is the progressive symbol map. `python3 tools/sync_symbols.py`
 turns it into `psx_symbols.h` (`PSX_FN_*`). See `psxrecomp/docs/SYMBOLS.md`.
+
+### Notes in code comments
+
+Comments in the code and tests refer to `NOTES.md` sections and `BUGS #<n>`
+entries. Those are the maintainer's working notes and bug list, kept next to
+the repository and not published. The comments say what matters in place.
+Comments that mention the Fighting Force project mean a sibling PSXRecomp
+port by the same maintainer; the two projects share findings.
 
 ### Framework pins
 

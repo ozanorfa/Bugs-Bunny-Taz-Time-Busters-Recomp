@@ -10,7 +10,8 @@ player full screen with its own camera.
   same version on every PC. Everyone in a match needs the same version; a
   different one is refused, or starts and then drifts apart during play.
   The ZIP holds no game data and no game code: each PC builds the game
-  once from its own disc (the same route as the Fighting Force ZIP).
+  once from its own disc. (A ready-built package, with no build step on
+  the players' PCs, is planned; until it exists this ZIP is the way.)
 - Windows 10 (version 1903 or newer) or 11, 64-bit; internet for the first
   setup; about 1.5 GB free on drive C:.
 - Their own copy of the game disc image (Bugs Bunny & Taz: Time Busters,
@@ -36,8 +37,7 @@ player full screen with its own camera.
    678,069,840 bytes, so another game's disc is never taken, even in a
    folder of many games). If it does not find it, it asks: drag your
    `.cue` file into the window and press Enter. The disc path is
-   remembered after a successful build, for updates. (The Fighting Force
-   ZIP's Setup searches the same way.)
+   remembered after a successful build, for updates.
 4. Wait: the first time the compiler is downloaded once and the whole game
    is built for this PC (minutes, more on a slow PC). It installs into
    `C:\RecompDev\BugsBunnyTazRecomp` (the build keeps its own copy of the
@@ -55,7 +55,7 @@ player full screen with its own camera.
      **PLAYER 2** and **PLAYER 3** tabs too. Nothing is chosen for them by
      itself, so with only Player 1 set up the game starts for one player
      (Taz on the computer, no Daffy). A keyboard player needs their own
-     keys (Configure), or the keys move two players (BUGS #46). Then NEW
+     keys (Configure), or the keys move two players. Then NEW
      GAME -> TWO PLAYERS -> START GAME; Player 3 presses any button before
      START GAME and Daffy comes too. Online this is not needed: every PC
      uses its own PLAYER 1.
@@ -74,6 +74,8 @@ What is on out of the box (Mods page, all on by default):
   players come from the room; on one PC the game asks only when a second
   controller is set up); no long intro, short loading screens.
   Options: the game's language (English by default), and each skip.
+- **Decorations:** a Turkish flag hangs from the windows of Granny's house
+  in Granwich.
 - **Own view for every player:** in a match every PC shows its own player
   full screen with its own camera. On one PC the game keeps its shared
   screen (option "On one PC": split screen instead).
@@ -90,6 +92,12 @@ What is on out of the box (Mods page, all on by default):
 In a LAN room only the host's Mods count: the room plays the host's
 selection on every PC, and the guests' own selections are left as they were.
 
+The picture: the game draws in true colour, without the PlayStation's
+dither pattern of fine dots. To get the dots back: Mods -> Image Filtering,
+turn the feature on (it is off by default), then Dithering = Native (PS1).
+This and the framework's other look options (Image Filtering, Internal
+Resolution, CRT Filter, ...) are each PC's own choice, also in a match.
+
 ## Starting a match
 
 **Before every match, everyone starts the game fresh** from the desktop
@@ -97,7 +105,7 @@ shortcut: close it first if you played offline or anyone changed Mods
 since it was opened, and when the host changes Mods between matches
 (own view off, for example), everyone closes and reopens it. The mods
 place their data by what was played since the game was opened, so PCs
-with a different history can fall out of sync (BUGS #55, #56).
+with a different history can fall out of sync.
 
 0. **Over the internet:** everyone installs Radmin VPN; the host creates a
    network there (Network -> Create network, a name and a password), the
@@ -117,7 +125,7 @@ with a different history can fall out of sync (BUGS #55, #56).
    **PLAY**. The seats taken must be 1, 2 and 3 with no gap: if a player
    left and the room shows an empty seat between players, the host
    creates the room again (a player in seat 4 with seat 3 empty gets no
-   Daffy; BUGS #57).
+   Daffy).
 4. In the game, the host: **NEW GAME -> START GAME**. Two or three seated
    players play together; with three, Daffy joins next to Taz in every
    level that has Taz. (△ on START GAME goes back to the main menu.)
@@ -138,13 +146,15 @@ with a different history can fall out of sync (BUGS #55, #56).
 
 ## Picture sharpness and speed
 
-The game's start files (`windows\Play.bat`, used by the desktop shortcut, and
-`windows\Play_with_log.bat`) cap the GPU surface the game draws on at 2x.
+The game's start files (`windows\Play_with_log.bat`, which the desktop
+shortcut starts, and `windows\Play.bat`) cap the GPU surface the game draws
+on at 2x.
 In a match every PC draws its own player's view a second time every frame.
 At the Internal Resolution mod's default of 4x that second draw took more
 than a whole frame, so matches ran far too slowly (choppy sound, about 2 s
-of input lag; BUGS #51). The cap holds whatever the host picks in Mods (in
-a room the host's Mods count for everyone). With a strong PC you can try a sharper picture: start the game
+of input lag). The cap holds whatever is picked in Mods (Internal
+Resolution is each PC's own choice). With a strong PC you can try a sharper
+picture: start the game
 from a Command Prompt in `C:\RecompDev\BugsBunnyTazRecomp` with
 `set PSX_GL_MAX_DIM=4096` and then `windows\Play.bat`.
 
@@ -153,7 +163,7 @@ The start files also turn off the runtime compiler for game code
 our tests all run without that compiler, and while you play it would only
 cost CPU. And they let a PC go silent for 5 s before a match ends
 (`PSX_NET_LIVENESS_MS=5000`; the framework's default is 1.5 s, and over
-Radmin VPN matches ended after a few minutes with no PC crashed, BUGS #61).
+Radmin VPN matches ended after a few minutes with no PC crashed).
 
 ## The rules of the three-player game
 
@@ -178,7 +188,7 @@ recompiler's inputs changed). Everyone in a match needs the same version.
 
 | What you see | What to do |
 |---|---|
-| The game closes by itself, or in a match everyone is sent back to the room with "The match ended: ..." | One PC's problem (a crash, a stall, a pause of its connection longer than the start files' 5 s) ends the match on every PC, so note the message each PC shows. Every PC closes the game before the next match. When the game closes, a folder opens with one file selected, `reports\BugsBunnyTaz_<PC name>_<date>-<time>.zip` in `C:\RecompDev\BugsBunnyTazRecomp`: every PC sends that file (it holds `logs\last_run.log`, `psx_last_run_report.json`, the installed version `SOURCE_VERSION` and, only if the game stopped on an error, `psx_crash.txt`). The newest 20 are kept. A rare stop at a level change is known (BUGS #60). |
+| The game closes by itself, or in a match everyone is sent back to the room with "The match ended: ..." | One PC's problem (a crash, a stall, a pause of its connection longer than the start files' 5 s) ends the match on every PC, so note the message each PC shows. Every PC closes the game before the next match. When the game closes, a folder opens with one file selected, `reports\BugsBunnyTaz_<PC name>_<date>-<time>.zip` in `C:\RecompDev\BugsBunnyTazRecomp`: every PC sends that file (it holds `logs\last_run.log`, `psx_last_run_report.json`, the installed version `SOURCE_VERSION` and, only if the game stopped on an error, `psx_crash.txt`). The newest 20 are kept. A rare stop at a level change is known. |
 | Setup stops | Select all the text in its window, copy it and send it along. |
 | Setup stops while downloading ("504", no internet) | Run Setup.bat again later. |
 | "No .bin file next to that .cue" | Put the dump's `.cue` and `.bin` in one folder. |

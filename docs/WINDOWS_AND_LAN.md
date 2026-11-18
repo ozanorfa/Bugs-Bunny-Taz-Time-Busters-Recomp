@@ -1,9 +1,17 @@
-# Windows build and a LAN / Radmin VPN match (Phase 6, step N5)
+# Windows build and a LAN / Radmin VPN match
 
-Status (2026-11-07): written on the Mac from the framework's own docs
-(`psxrecomp/docs/GETTING_STARTED.md`, `BUILDING.md`, `NETPLAY.md`) and its
-source. **Not yet run on a Windows PC.** A Mac <-> Windows match is not
-promised by the framework docs either; the first match below is the test.
+Written from the framework's own docs (`psxrecomp/docs/GETTING_STARTED.md`,
+`BUILDING.md`, `NETPLAY.md`) and its source.
+
+**Status (2026-11-18).** First used on Windows on 2026-11-16: three PCs over
+Radmin VPN with the players' ZIP 0.5.0 (section 8).
+- The game built on every PC and matches ran.
+- The matches ended after a few minutes. The start files now wait 5 s
+  instead of 1.5 s; that is not yet tested.
+- The own view was turned off for speed.
+
+A Mac <-> Windows match is not promised by the framework docs and has not
+been tried.
 
 The goal: one PC per player, each showing its own character full screen
 (the "Own view for every player" mod, on by default), connected over LAN or
@@ -47,20 +55,10 @@ $env:Path = "$env:PSXRECOMP_TOOLCHAIN_DIR\bin;$env:Path"
 Check: `git --version`, `python --version`, `cmake --version`,
 `ninja --version`, `clang --version` all print a version.
 
-## 2. Move the project to the PC
+## 2. Get the project and the disc
 
-The repo has no remote, so it travels as a git bundle. On the Mac, in
-`BugsBunnyTazRecomp/`:
-
-```bash
-git bundle create ../BugsBunnyTazRecomp.bundle --all
-```
-
-Copy to the PC (USB stick or network share):
-
-- `BugsBunnyTazRecomp.bundle`
-- the disc: `disc/BugsBunnyTaz_TimeBusters_USA.cue` and `.bin` from the
-  workspace folder (a copy; never the OpenEmu original).
+You need your own dump of the disc: `BugsBunnyTaz_TimeBusters_USA.cue` and
+its `.bin` (any names work; `game.toml` and the commands below use these).
 
 The layout on the PC (the disc sits next to the repo, as on the Mac;
 `game.toml` names it `../disc/...`):
@@ -77,24 +75,21 @@ In PowerShell:
 
 ```powershell
 Set-Location C:\RecompDev
-git clone -b n4-own-views BugsBunnyTazRecomp.bundle BugsBunnyTazRecomp
+git clone --recurse-submodules https://github.com/ozanorfa/Bugs-Bunny-Taz-Time-Busters-Recomp.git BugsBunnyTazRecomp
 Set-Location BugsBunnyTazRecomp
-git submodule update --init --recursive
 ```
 
 The submodules (psxrecomp, recomp-ui and the nested recomp-net) come from
 their public GitHub repositories at the commits this repo pins.
 
-Check against the Mac (both must print the same):
+Check against the other machine (both must print the same):
 
 ```powershell
 git log -1 --oneline
 git submodule status
 ```
 
-Later updates: make a new bundle on the Mac, then on the PC
-`git pull ..\BugsBunnyTazRecomp.bundle n4-own-views` and
-`git submodule update --init --recursive`.
+Later updates: `git pull` and `git submodule update --init --recursive`.
 
 ## 3. Check the disc
 
@@ -102,7 +97,7 @@ Later updates: make a new bundle on the Mac, then on the PC
 Get-FileHash -Algorithm MD5 ..\disc\BugsBunnyTaz_TimeBusters_USA.bin
 ```
 
-It must be `03FD0DC4AF76689E571EEAC73721602C` (the Mac's dump,
+It must be `03FD0DC4AF76689E571EEAC73721602C` (the dump this project uses,
 `disc_probe.json`). Another dump has another netplay disc fingerprint
 and the match is refused.
 
@@ -186,11 +181,11 @@ Then:
 
 ## 8. The package for the players (one ZIP, built by each PC)
 
-Decided 2026-11-09 by the user: **the same route as the Fighting Force
-project**, so a friend who installed one game knows the other. The ZIP holds
-no game data and no game code; each player's PC builds the game once from
-their own disc. Nothing is installed: Python comes with the ZIP, and the
-framework's compiler pack downloads itself once.
+This is today's route. The ZIP holds no game data and no game code; each
+player's PC builds the game once from their own disc. Nothing is
+installed: Python comes with the ZIP, and the framework's compiler pack
+downloads itself once. A ready-built package is planned to replace it (see
+the end of this section).
 
 Make it on the Mac (or any machine with Git and Python), from a committed
 tree:
@@ -201,8 +196,7 @@ python3 tools/make_player_zip.py --python-zip ../dist/downloads/python-3.12.10-e
 
 - `--python-zip`: python.org's Windows embeddable package
   (`https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip`,
-  MD5 `fe8ef205f2e9c3ba44d0cf9954e1abd3`; the Fighting Force copy has the
-  same MD5).
+  MD5 `fe8ef205f2e9c3ba44d0cf9954e1abd3`).
 - Output: `../dist/BugsBunnyTaz3P_v<VERSION>_<commit>.zip`. Inside it:
   - `Setup.bat` (a copy of `windows/Setup.bat`);
   - `START_HERE.txt` (from `windows/START_HERE.txt`);
@@ -215,7 +209,9 @@ python3 tools/make_player_zip.py --python-zip ../dist/downloads/python-3.12.10-e
   `SLUS_*`, retail BIOS names). It also refuses `.bat` files with LF line
   endings (`.gitattributes`: `*.bat eol=crlf`).
 
-What the player's PC does (`START_HERE.txt`; untested on Windows):
+What the player's PC does (`START_HERE.txt`). Steps 1-3 ran on three Windows
+PCs on 2026-11-16 with 0.5.0. The start file with the log and the report
+came after that and has not run on Windows yet.
 1. `Setup.bat` copies the folder and Python to
    `C:\RecompDev\BugsBunnyTazRecomp` (robocopy). It finds the `.cue` (its
    install's own `disc\` copy, then its own folder, the one above, the one
@@ -242,7 +238,8 @@ What the player's PC does (`START_HERE.txt`; untested on Windows):
    `reports\BugsBunnyTaz_<COMPUTERNAME>_<yyyyMMdd-HHmmss>.zip` (PowerShell
    `Compress-Archive`; the newest 20 kept), appends the exit code to the log,
    and opens Explorer on the zip. Both start files set
-   `PSX_NET_LIVENESS_MS=5000` (BUGS #61).
+   `PSX_NET_LIVENESS_MS=5000`: with the framework's 1.5 s default, matches
+   over Radmin VPN ended after a few minutes with no PC crashed.
 5. An update is the new ZIP's `Setup.bat`. It copies over the old folder;
    saves, settings, the disc path and the builds stay.
 
@@ -253,10 +250,19 @@ two different builds cannot start a match. Raise N in `VERSION` and in
 every `mods/preloaded/packages/bbt.*` manifest (and its folder) whenever a
 change alters what the game does; python-unit checks that they agree.
 
-The prebuilt route (`packaging/release.toml`, `scripts/package_release.sh`,
-the framework's `package_title_release`) still works for developers, but it
-ships code recompiled from the game's program, so it is **not** for
-sharing.
+**The ready-built package (planned, decided 2026-11-18).** Players extract it,
+point it at their disc and play, with no build step on their PC. It holds
+the compiled game, meaning code recompiled from the game's program, so it
+is shared privately with the players, never as a public release. It is
+built with the framework's packager, which runs only on a Windows (or
+Linux) host:
+- `psxrecomp/tools/package_title_release.ps1 --channel playtest` with
+  `packaging/release.toml`. The public channel refuses the framework's
+  built-in CD Speed and Fast Loading mods, which this build stages.
+- MSYS2 MinGW-w64 in `C:\msys64` (gcc, g++, objdump, cmake and ninja).
+- The start files' settings ship as a `Play.bat` in the package.
+
+It has not been built yet.
 
 ## Known limits
 
@@ -268,7 +274,7 @@ sharing.
   seats. Verified with three launchers on one machine
   (`tests/test_game_lanroom.py` `test_three_pcs_in_one_room`); not yet on
   three real PCs. The player-facing steps are in `docs/PLAYING_TOGETHER.md`.
-- The shareable package (section 8) has not been built yet; the
+- The ready-built package (section 8) has not been built yet; the
   framework's packager only runs on Windows and Linux.
 - A player on the Mac with Windows players: the Mac builds are other
   builds than the Windows ZIP, and a Mac <-> Windows match is not promised

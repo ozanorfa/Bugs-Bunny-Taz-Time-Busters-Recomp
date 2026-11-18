@@ -1,4 +1,4 @@
-# Own view (Phase 6 step N4, in development): every player's own camera.
+# Own view: every player's own camera.
 # Selects the trusted plugin compiled into this game from
 # src/mods/own_view.c. This package contains no game data.
 format_version = 11
@@ -7,10 +7,10 @@ version = "0.6.0"
 # 0.<N>.0: N is the netplay compatibility number every bbt.* package shares
 # (and VERSION). Bump it in all of them on any change to simulation
 # behaviour: a LAN guest without the host's version is refused, so two
-# different builds cannot start a match (NOTES.md "Netplay compatibility").
-name = "Own View (in development)"
+# different builds cannot start a match (docs/WINDOWS_AND_LAN.md, section 8).
+name = "Own View"
 author = "BugsBunnyTazRecomp project"
-description = "Work in progress: every player's own camera."
+description = "Every player's own camera: in a match, each PC shows its own player full screen."
 resolver = "declarative"
 
 [[target]]
@@ -20,7 +20,7 @@ game_id = "SLUS-01144"
 id = "two-views"
 name = "Own view for every player"
 description = "In a 2-player level, every player gets their own camera and controls (the game engine's own extra views: two, three with the third player). In a netplay match each PC shows its own player full screen. On one PC the game keeps its shared screen unless \"On one PC\" is set to split screen (bands, player 1 on top). In a LAN room the host's choice counts for everyone."
-group = "Own view (in development)"
+group = "Own view"
 default_enabled = true
 
 [[plugin]]

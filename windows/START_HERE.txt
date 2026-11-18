@@ -46,6 +46,10 @@ OUT OF THE BOX (nothing to set in Mods)
 - Own view: in a match, every PC shows its own player full screen.
 - Third player: Daffy Duck joins when a third player is there (three in a
   room; on one PC, once Player 3 presses a button, from the next level).
+- Decorations: a Turkish flag hangs from the windows of Granny's house.
+- The picture is drawn in true colour, without the PlayStation's dither
+  pattern. To bring it back: Mods - Image Filtering, turn it on, then
+  Dithering = Native (PS1).
 
 PLAYING TOGETHER (Radmin VPN over the internet, or a home LAN)
 - Everyone needs the same version of this ZIP.

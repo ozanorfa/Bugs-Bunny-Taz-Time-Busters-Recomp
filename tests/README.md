@@ -30,7 +30,7 @@ in per-configuration folders of multi-config generators.
 |---|---|---|
 | `c-unit` | a C compiler | `src/mods/bouze.c`, `donor.c`, `donor_tex.c`, `clone_res.c`, `retarget.c` on synthetic data built by `tests/unit/synth.c`: the LZ decoder (literals, matches, long lengths, stopping at the token count), header and record/tag grammar, donor extraction, the synthetic spin and its attach node, Taz's record patch and timing fixes, the scale patch, texture analysis and rebuild (CLUT bit 15, CLUT blocks that declare more rows than they carry), the VRAM map, the target pool, packing (uploaded VRAM only, one texture page per block) and the record patch; the animation picker, the model relocation (as the loader's FUN_8005BB84), the strip packing for the third actor (half-height blocks, records sampling the kept rows), the hold animation, and the third actor's own resource list (with native idle timing); the retargeting's angle / matrix math (Euler round trip, RotMatrix layout, bone alignment), a skeleton retargeted onto itself keeping its rotations, resampling to any length |
 | `python-unit` | Python | `tools/bouze/` (decoder, record parser, keyframe parser) against the C code's synthetic level and spin, the ISO 9660 reader on synthetic 2048- and 2352-byte images, disc lookup from `game.toml` / `.cue`, the 3-player `game.toml` writer, `mods/state.toml` writing and restoring |
-| `disc` | the player's disc (`game.toml` `[game] disc`) | it is the known dump (size, MD5); file layout; all 63 `.BZZ` files decode identically in C and Python and parse to their end marker; the TRCA01 enemy as the plugin extracts it (model, role table complete, spin on node 23, its 13 texture blocks / CLUTs as verified in VRAM); its and Taz's animations parse exactly; in all 38 levels with Taz the patch touches only his payloads and the texture plan fits (except `AZR01`, BUGS.md #20); the third actor's strip plan fits and every record samples inside its block; its hold animation is the stance's first frame plus empty frames |
+| `disc` | the player's disc (`game.toml` `[game] disc`) | it is the known dump (size, MD5); file layout; all 63 `.BZZ` files decode identically in C and Python and parse to their end marker; the TRCA01 enemy as the plugin extracts it (model, role table complete, spin on node 23, its 13 texture blocks / CLUTs as verified in VRAM); its and Taz's animations parse exactly; in all 38 levels with Taz the patch touches only his payloads and the texture plan fits (except `AZR01`, a known exception); the third actor's strip plan fits and every record samples inside its block; its hold animation is the stance's first frame plus empty frames |
 | `game` | `build-dev` (2 seats, `PSX_DEBUG_TOOLS=ON`); `build-p3` (`-DBBT_MAX_PLAYERS=5`) for the 3-player test; `build-net` (`-DPSX_NETPLAY=ON -DRNET_ENABLE_ICE=OFF -DBBT_MAX_PLAYERS=5`) for the netplay test; the disc | end to end through the debug server, see below |
 
 ### Game tests
@@ -221,8 +221,8 @@ Granwich is ~5,000 frames). Screenshots of every stage are in
 - No game data in the repository: tests may read the player's disc at run
   time, and may only compare sizes, counts, positions and hashes. Test
   output stays under `build-tests/`.
-- Expected values come from verified facts (NOTES.md); say where in a
-  comment.
+- Expected values come from facts verified in Ghidra or in the running
+  game; say where in a comment.
 - A test must be able to fail. The C unit tests were checked by running
   them against deliberately broken copies of the mod code (each mutation
   must make a test fail).
