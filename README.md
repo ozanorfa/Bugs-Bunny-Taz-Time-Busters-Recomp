@@ -1,11 +1,5 @@
 # BugsBunnyTaz Recompiled
 
-<!-- retcomm-readme-metrics -->
-[![GitHub downloads (all assets, all releases)](https://img.shields.io/github/downloads/RetroPortingToolKit/BugsBunnyTazRecomp/total)](https://github.com/RetroPortingToolKit/BugsBunnyTazRecomp/releases)
-[![GitHub downloads (latest release)](https://img.shields.io/github/downloads/RetroPortingToolKit/BugsBunnyTazRecomp/latest/total)](https://github.com/RetroPortingToolKit/BugsBunnyTazRecomp/releases/latest)
-[![GitHub release](https://img.shields.io/github/v/release/RetroPortingToolKit/BugsBunnyTazRecomp)](https://github.com/RetroPortingToolKit/BugsBunnyTazRecomp/releases/latest)
-<!-- /retcomm-readme-metrics -->
-
 Static recompilation of **BugsBunnyTaz** built on
 [psxrecomp](https://github.com/mstan/psxrecomp) and
 [recomp-ui](https://github.com/RetroPortingToolKit/recomp-ui).
@@ -16,6 +10,10 @@ on their own PC over LAN or Radmin VPN, each with their own full-screen
 view. The mods (Quick start, the own view, the third player) are on by
 default; players' guide: [docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md).
 
+This repository holds no game data and no game code. You need your own
+copy of the game (the USA disc), and the game is built from it on your own
+machine (see "Legal" and "Quick start" below).
+
 | | |
 |---|---|
 | Players | 2 (3 with Daffy: the 3-player config `game_3p.toml`) |
@@ -25,29 +23,6 @@ default; players' guide: [docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md).
 
 Scaffolded with the New Project Layout. See
 `psxrecomp/docs/GAME_PROJECT_SETUP.md` for the full flow.
-
-<!-- retcomm-readme-launcher -->
-## Retro Launcher
-
-You can run this title **standalone** (download the release zip, point it at
-your disc, play), or manage installs, updates, and disc/BIOS wiring with
-**[Retro Launcher](https://github.com/RetroPortingToolKit/Retro-Launcher)** —
-the Retro Compilation Manager hub for self-compiling recomps.
-
-[Downloads](https://github.com/RetroPortingToolKit/Retro-Launcher/releases) ·
-[Full README & features](https://github.com/RetroPortingToolKit/Retro-Launcher#readme)
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/RetroPortingToolKit/Retro-Launcher/main/docs/screenshots/hub-and-game-launcher.png" alt="Retro hub with a background build, next to a title’s recomp-ui launcher" width="720">
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/RetroPortingToolKit/Retro-Launcher/main/docs/screenshots/queue-and-background-build.png" alt="Background cmake build with titles queued" width="720">
-</p>
-
-Retro checks for updates, installs the prebuilt release zips, and automates
-BIOS/ROM/save plumbing so you are not stuck repeating each game’s first run by hand.
-<!-- /retcomm-readme-launcher -->
 
 ## Legal
 
