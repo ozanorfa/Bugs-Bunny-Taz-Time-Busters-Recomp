@@ -44,6 +44,10 @@ overlay_cache = true
 [video]
 renderer = "opengl"
 aspect_ratio = "4:3"
+# The look the user chose (2026-11-18): true colour, without the PS1's 4x4
+# dither pattern (OpenGL only; presentation only, the game runs the same).
+# Players can change it in Mods -> Image Filtering -> Dithering.
+dithering = "off"
 
 # Two / three views (mod package bbt.own-view, NOTES.md "Two views at full
 # speed"): the game logic advances once per frame (fixed step), and with the
