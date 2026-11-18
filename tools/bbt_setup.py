@@ -42,8 +42,9 @@ FILE_LIST = ROOT / ".bbt_files"     # the players' ZIP: every file it holds, one
 # Paths a change to which needs no new game C. Everything else in the source
 # (psxrecomp, game.toml, symbols, seeds, codegen_setup.*, ...) counts.
 BUILD_ONLY = ("src/", "tools/", "docs/", "windows/", "mods/", "assets/", "packaging/", "scripts/",
-              "tests/", "launcher_assets/", ".github/", "recomp-ui/", "README.md", "VERSION",
-              "CMakeLists.txt", "game_3p.toml", "game_options.toml", "framework_pins.txt",
+              "tests/", "launcher_assets/", ".github/", "recomp-ui/", "README.md", "LICENSE",
+              "NOTICE.md", "VERSION", "CMakeLists.txt", "game_3p.toml", "game_options.toml",
+              "framework_pins.txt",
               ".gitignore", ".gitattributes", ".bbt_files", "SOURCE_VERSION")
 
 
