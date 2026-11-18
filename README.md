@@ -24,7 +24,8 @@ on your own machine.
 | Year | 2000 |
 
 Players' guide, with every step for a match:
-[docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md).
+[docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md). What changed in each version:
+[CHANGELOG.md](CHANGELOG.md).
 
 ## What the mods add
 
