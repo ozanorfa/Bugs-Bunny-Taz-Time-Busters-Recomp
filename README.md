@@ -7,17 +7,9 @@ It runs on macOS and Windows.
 
 It adds **Daffy Duck as a third playable character**, for up to three
 players. They can share one PC, or each play on their own PC over a LAN or
-Radmin VPN, each with a full-screen view of their own player. The mods are on
-by default:
-- Quick start;
-- each player's own view;
-- the third player;
-- a Turkish flag at the windows of Granny's house.
+Radmin VPN, each with a full-screen view of their own player.
 
-The picture is drawn in true colour, without the PlayStation's dither pattern
-(to bring it back: Mods -> Image Filtering, turn it on, Dithering = Native (PS1)).
-
-Players' guide: [docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md).
+![Bugs, Taz and Daffy in Granwich: Daffy kicks](docs/images/three_players.jpg)
 
 **This repository holds no game data and no game code.** You need your own
 copy of the game (the USA disc, SLUS-01144). The game is built from that copy
@@ -30,6 +22,125 @@ on your own machine.
 | Original developer | Artificial Mind and Movement |
 | Original publisher | Infogrames |
 | Year | 2000 |
+
+Players' guide, with every step for a match:
+[docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md).
+
+## What the mods add
+
+All of them are on by default; nothing has to be set. Each one can be
+switched off, and its options changed, on the launcher's **Mods** page (see
+[The launcher](#the-launcher)). In a LAN room the host's Mods count for every
+PC.
+
+### Third player: Daffy Duck
+
+- **Who:** Daffy joins as a third hero next to Taz in every level that has
+  Taz.
+  - He has his own health panel (under Bugs').
+  - Enemies go for him too.
+  - □ is his attack, a kick that hits like Taz's spin.
+  - His model is read from your own disc, and Bugs' animations are fitted to
+    his skeleton.
+- **When he comes:** only when there is a third player.
+  - **Online:** three players seated in the room; seat 3 is Daffy.
+  - **One PC:** choose a controller on the launcher's **PLAYER 3** card;
+    Daffy comes at the next level start once Player 3 presses any button. To
+    have him in the first level, press before START GAME.
+  - With two players he stays away.
+- **When he is out:** he comes back next to Taz after 5 seconds (next to Bugs
+  if Taz is out), with full health and no life lost. A package that brings a
+  player back brings him back too.
+- **Options** (Mods -> Third player: Daffy Duck):
+  - **Character:** Daffy Duck, or the hunched enemy from the Transylvania level.
+  - **Daffy's sounds:** Bugs' steps, jumps and attack; Taz's; or none of Taz's.
+  - **When Daffy is out:** after 5 seconds; or the game's rule for Bugs and Taz,
+    which is when the team comes back (a life lost) or a package.
+
+### Own view for every player
+
+In the original game two players share one screen and one camera. With this
+mod every player gets their own camera:
+- **In a match:** every PC shows its own player full screen and follows them
+  with its own camera.
+- **On one PC:** the game keeps its shared screen by default. Option
+  **On one PC** -> *Split screen* gives each player a band of their own,
+  player 1 on top.
+
+![Three PCs in one match, each showing its own player: Bugs, Taz and Daffy](docs/images/own_view_three_pcs.jpg)
+
+*One match on three PCs: PC 1 shows Bugs, PC 2 Taz, PC 3 Daffy.*
+
+![Split screen on one PC, a band per player](docs/images/split_screen.jpg)
+
+*Split screen on one PC, one band per player.*
+
+**It costs speed.** Every PC draws the scene a second time every frame for
+its own view:
+- The start files cap the picture at 2x so that this extra drawing fits in a
+  frame.
+- In the first Windows test (three PCs) it was still too slow, so the host
+  turned the own view off for the match, and the speed was fine.
+- If a match is slow or choppy, switch it off on the host (Mods -> Own view
+  for every player). Everyone then plays on the game's shared camera.
+- With three views, a few heavy scenes run below full speed: the Viking boss
+  level and a few others, at about 60-85 %. This is the emulated graphics
+  chip's time, a framework limit.
+
+### Quick start
+
+- Straight to the game's main menu: no logos, no language screen, no PRESS
+  START.
+- No long new-game intro, and shorter loading screens.
+- The emulated CD reads at 2x.
+- In a LAN room the number of players comes from the seats, so the ONE /
+  TWO PLAYERS menu is skipped.
+- **Options:**
+  - the game's language: English, Français, Español, or "Ask";
+  - each skip on its own;
+  - the CD speed, 1x to 4x.
+
+### Decorations: a Turkish flag
+
+A Turkish flag hangs from the arched windows on both sides of Granny's house
+in Granwich, the way flags hang from windows on national holidays. It is
+drawn into the game's own wall texture at the game's resolution, so every
+renderer shows it, near and far.
+
+![A Turkish flag at the windows of Granny's house](docs/images/turkish_flag.jpg)
+
+### The picture
+
+The game draws in true colour, without the PlayStation's dither pattern of
+fine dots. To bring the dots back: Mods -> Image Filtering, turn it on, then
+Dithering = Native (PS1). The framework's look options (Image Filtering,
+Internal Resolution, CRT Filter, ...) are each PC's own choice, also in a
+match.
+
+## The launcher
+
+The game starts in its launcher:
+- **PLAYER 1 / 2 / 3 cards:** choose each player's controller. Online, every
+  PC sets only its own PLAYER 1; PLAYER 2 and 3 are for players on one PC.
+  A keyboard player needs keys of their own (Configure).
+- **Mods:** every feature above, with its options on the right.
+- **NETPLAY -> LAN / Direct IP:** host or join a room.
+- **PLAY:** starts the game.
+
+![The launcher: disc check, PLAYER cards, memory cards, NETPLAY and PLAY](docs/images/launcher.png)
+
+![The Mods page: Third player: Daffy Duck and its options](docs/images/launcher_mods.png)
+
+## Known limits
+
+- **Matches ending:** over Radmin VPN, matches ended on every PC after a few
+  minutes with no PC crashed. The start files now wait 5 s, not 1.5 s,
+  before a silent PC ends the match; that is not yet tested in a real match.
+  Before every match, everyone starts the game fresh.
+- **Level change:** in three-view split screen on one PC, a rare stop at one
+  level change has been seen.
+- **Mac and Windows together:** not promised by the framework and not tried
+  yet. Every player uses the same Windows build.
 
 ## Playing on Windows
 
@@ -109,6 +220,8 @@ submodules deliberately, one tested step at a time.
   by Warner Bros., Infogrames / Atari, Artificial Mind and Movement or Sony.
 - Bugs Bunny, Taz, Daffy Duck and Looney Tunes are trademarks of Warner Bros.
   Entertainment Inc.
+- The screenshots in `docs/images/` show the original game's characters and
+  artwork, which belong to their owners.
 
 ## License
 
