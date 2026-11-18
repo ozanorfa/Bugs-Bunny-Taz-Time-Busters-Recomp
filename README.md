@@ -51,7 +51,7 @@ The ZIP is made with `tools/make_player_zip.py`. See
 The disc copy sits next to the repository (`../disc/`, as `game.toml` says).
 
 ```bash
-git clone --recurse-submodules https://github.com/ozanorfa/BugsBunnyTazRecomp.git
+git clone --recurse-submodules https://github.com/ozanorfa/Bugs-Bunny-Taz-Time-Busters-Recomp.git BugsBunnyTazRecomp
 cd BugsBunnyTazRecomp
 ./psxrecomp/tools/ci/build_emitters.sh
 python3 psxrecomp/psxrecomp_cli.py generate \
