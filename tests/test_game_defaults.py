@@ -5,7 +5,8 @@ new-game intro skipped; with pad 2 in on one PC the game asks ONE / TWO
 PLAYERS), the own view
 on but keeping the game's shared screen on one PC (one view in a 2-player
 level), and the third player on but not appearing without a third player
-(this test process gives seat 2 no controller). OfflineJoin: with a
+(this test process gives seat 2 no controller), and Decorations off (no
+Turkish flag; off by default since 2026-11-18). OfflineJoin: with a
 controller set for Player 3 (settings.toml p3_device), Daffy still waits
 until seat 3 presses a button, then comes at the next level start. A LAN
 room with the same defaults: test_game_lanroom.py
@@ -58,6 +59,9 @@ class Defaults(unittest.TestCase):
         # the own view: one PC keeps the shared screen
         self.assertEqual(c.u8(VIEW_COUNT), 1, "the screen is split on one PC")
         self.assertEqual(k.get(V + "views_set", 0) + k.get(V + "views_3", 0), 0)
+        # Decorations: off, so Granwich's wall texture is uploaded unchanged
+        self.assertEqual({n: k.get("bbt.decor." + n, 0) for n in ("flag_texels", "flag_far_texels")},
+                         {"flag_texels": 0, "flag_far_texels": 0}, "the Turkish flag is on by default")
         self.game.shot("1_granwich")
 
     def test_2_no_hook_lost_its_guard(self):

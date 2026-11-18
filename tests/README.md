@@ -132,8 +132,8 @@ run against `build-release`, which holds your own mod selection
   offline, 3-player config): Quick start goes straight to the main menu
   (with pad 2 in, the game asks ONE / TWO PLAYERS), skips the logos and
   the intro,
-  the third player does not appear without a controller for seat 3, and
-  one PC keeps the game's shared screen. `OfflineJoin`: with Player 3 set
+  the third player does not appear without a controller for seat 3,
+  one PC keeps the game's shared screen, and the Turkish flag is off. `OfflineJoin`: with Player 3 set
   to the keyboard but no key pressed there is no Daffy; after a Player 3
   key press he comes at the next level start. `Defaults` test_2: every
   `bbt.*` function override is armed and none counted a guard miss

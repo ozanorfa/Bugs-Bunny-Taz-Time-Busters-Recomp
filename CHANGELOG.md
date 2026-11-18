@@ -34,6 +34,8 @@ room refuses a guest whose packages are another version. A version marked
 - **True colour by default:** the picture is drawn without the PlayStation's
   dither pattern. To bring it back: Mods -> Image Filtering, turn it on, then
   Dithering = Native (PS1).
+- **The Turkish flag is off by default.** To turn it on: Mods ->
+  Decorations. In a LAN room the host's choice counts for every PC.
 - The launcher no longer labels Own View and Third Character "in development".
 
 ### Fixed

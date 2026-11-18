@@ -8,7 +8,7 @@ plugins and carry no game data:
 | `bbt.quick-start` | straight to the main menu, no long intro, short loading screens | yes |
 | `bbt.own-view` | every player's own camera; in a match each PC shows its own player | yes |
 | `bbt.third-character` | Daffy Duck as the third player (and older developer tests) | Daffy: yes |
-| `bbt.decor` | a Turkish flag at the windows of Granny's house | yes |
+| `bbt.decor` | a Turkish flag at the windows of Granny's house | no |
 | `bbt.shared` | hooks shared by the features above; turned on by them | (internal) |
 
 Every package's version is `0.<N>.0`, where N is the netplay compatibility

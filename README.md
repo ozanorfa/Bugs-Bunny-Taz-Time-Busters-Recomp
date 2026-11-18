@@ -29,10 +29,10 @@ Players' guide, with every step for a match:
 
 ## What the mods add
 
-All of them are on by default; nothing has to be set. Each one can be
-switched off, and its options changed, on the launcher's **Mods** page (see
-[The launcher](#the-launcher)). In a LAN room the host's Mods count for every
-PC.
+All of them except the decorations are on by default; nothing has to be
+set. Each one can be switched on or off, and its options changed, on the
+launcher's **Mods** page (see [The launcher](#the-launcher)). In a LAN room
+the host's Mods count for every PC.
 
 ### Third player: Daffy Duck
 
@@ -101,15 +101,6 @@ its own view:
   - each skip on its own;
   - the CD speed, 1x to 4x.
 
-### Decorations: a Turkish flag
-
-A Turkish flag hangs from the arched windows on both sides of Granny's house
-in Granwich, the way flags hang from windows on national holidays. It is
-drawn into the game's own wall texture at the game's resolution, so every
-renderer shows it, near and far.
-
-![A Turkish flag at the windows of Granny's house](docs/images/turkish_flag.jpg)
-
 ### The picture
 
 The game draws in true colour, without the PlayStation's dither pattern of
@@ -117,6 +108,11 @@ fine dots. To bring the dots back: Mods -> Image Filtering, turn it on, then
 Dithering = Native (PS1). The framework's look options (Image Filtering,
 Internal Resolution, CRT Filter, ...) are each PC's own choice, also in a
 match.
+
+### Decorations
+
+Off by default. Mods -> Decorations hangs a Turkish flag from the windows of
+Granny's house in Granwich.
 
 ## The launcher
 

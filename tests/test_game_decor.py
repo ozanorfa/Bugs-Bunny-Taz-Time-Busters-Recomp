@@ -1,6 +1,7 @@
 """Game tier: the Turkish flag of bbt.decor (src/mods/decor.c).
 
-In Granwich, with the defaults (Decorations on): the plugin rewrote the
+In Granwich, with Decorations turned on (off by default since 2026-11-18;
+test_game_defaults checks that): the plugin rewrote the
 wall texture's upload and its CLUT row, so VRAM holds the flag (a row of
 the 30x20 flag mask at texel (17,32) of the 64x64 texture at VRAM
 (256,448)) and the CLUT at (128,475) has the flag's red and white at

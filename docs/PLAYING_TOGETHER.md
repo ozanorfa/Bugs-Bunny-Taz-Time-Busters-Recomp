@@ -68,14 +68,12 @@ player full screen with its own camera.
 
 ## Mods: nothing to set
 
-What is on out of the box (Mods page, all on by default):
+The Mods page out of the box (everything on except Decorations):
 - **Quick start:** straight to the game's main menu (no logos, no language
   screen, no PRESS START); in a LAN room no ONE / TWO PLAYERS menu (the
   players come from the room; on one PC the game asks only when a second
   controller is set up); no long intro, short loading screens.
   Options: the game's language (English by default), and each skip.
-- **Decorations:** a Turkish flag hangs from the windows of Granny's house
-  in Granwich.
 - **Own view for every player:** in a match every PC shows its own player
   full screen with its own camera. On one PC the game keeps its shared
   screen (option "On one PC": split screen instead).
@@ -88,6 +86,8 @@ What is on out of the box (Mods page, all on by default):
   jumps and attack; Taz's; or none of Taz's), and when Daffy is out (back
   next to Taz after 5 seconds, the default; or the game's rule for Bugs and
   Taz).
+- **Decorations** (off by default): a Turkish flag hangs from the windows
+  of Granny's house in Granwich. Turn it on in Mods -> Decorations.
 
 In a LAN room only the host's Mods count: the room plays the host's
 selection on every PC, and the guests' own selections are left as they were.
