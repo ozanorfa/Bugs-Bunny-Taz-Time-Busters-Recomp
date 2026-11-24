@@ -1,0 +1,46 @@
+# The hermetic tiers (tests/README.md "Tiers"): the mods' pure C on
+# synthetic data and the Python tools. No disc, no game build, no
+# submodules. Windows builds with MSVC (the Visual Studio generator); the
+# players' Setup.bat builds the game itself with the framework's clang.
+name: unit tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Configure (the platform's default generator and compiler)
+        shell: bash
+        run: cmake -S tests -B build-tests -DCMAKE_BUILD_TYPE=Release
+      - name: Unit tier
+        shell: bash
+        run: |
+          python tests/run_tests.py unit 2>&1 | tee unit.log
+          # the runner skips the C tests when their binary is missing; fail instead
+          grep -q "ok    mod_blocks.the_default_layout" unit.log
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: C unit tests under AddressSanitizer and UndefinedBehaviorSanitizer
+        run: |
+          cmake -S tests -B build-asan -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          cmake --build build-asan --target bbt_unit_tests
+          build-asan/bbt_unit_tests
