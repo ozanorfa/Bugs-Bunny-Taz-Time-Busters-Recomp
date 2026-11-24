@@ -45,6 +45,10 @@ room refuses a guest whose packages are another version. A version marked
   Daffy and the Transylvania enemy in the room builds the other character's
   moves. Not yet tried in a real room, so the guides still ask everyone to
   restart the game after the host changes Mods.
+- Setup takes a disc path typed at its prompt also when it is relative
+  (for example `..\disc\game.cue`); before, it stopped with "no disc at".
+  Dropping the .cue on the window and the automatic search were not
+  affected. Not yet tried on Windows.
 - Checks against a damaged disc file: the game's file reader no longer
   writes past its buffer on an unusually long copy, and animation data that
   is too short or names a bone out of range is refused. The checked disc
