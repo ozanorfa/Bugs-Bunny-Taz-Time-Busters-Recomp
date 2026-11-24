@@ -81,6 +81,9 @@ set /p "CUE=  Disc .cue: "
 if not defined CUE goto :ask_cue
 set "CUE=%CUE:"=%"
 :check_cue
+rem A full path, made here: a typed relative one would otherwise be
+rem checked from this folder and read from the install folder (cd below).
+for %%F in ("%CUE%") do set "CUE=%%~fF"
 if not exist "%CUE%" goto :cue_missing
 for %%F in ("%CUE%") do set "CUEDIR=%%~dpF"
 set NBIN=0

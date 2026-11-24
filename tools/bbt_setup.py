@@ -84,7 +84,9 @@ def main() -> int:
     ap.add_argument("--disc", required=True, help="your .cue (its .bin beside it)")
     ap.add_argument("--dry-run", action="store_true", help="say what would be done, build nothing")
     args = ap.parse_args()
-    disc = Path(args.disc).expanduser()
+    # Absolute (not resolve(): that turns a mapped drive into a UNC path), so
+    # disc_source.txt names the disc from any folder.
+    disc = Path(os.path.abspath(Path(args.disc).expanduser()))
     if not disc.is_file():
         sys.exit(f"no disc at {disc}")
 
