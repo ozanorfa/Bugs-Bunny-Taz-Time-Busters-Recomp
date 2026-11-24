@@ -8,7 +8,8 @@ level), and the third player on but not appearing without a third player
 (this test process gives seat 2 no controller), and Decorations off (no
 Turkish flag; off by default since 2026-11-18). OfflineJoin: with a
 controller set for Player 3 (settings.toml p3_device), Daffy still waits
-until seat 3 presses a button, then comes at the next level start. A LAN
+until seat 3 presses a button, then comes at once, next to Taz (and at
+every later level start). A LAN
 room with the same defaults: test_game_lanroom.py
 test_two_pcs_in_a_three_seat_room."""
 from __future__ import annotations
@@ -149,20 +150,51 @@ class OfflineJoin(unittest.TestCase):
     def k(self) -> dict:
         return {x[len(A3):]: v for x, v in self.c.counters().items() if x.startswith(A3)}
 
+    def clone(self) -> int:
+        return self.c.u32(int(self.c.mod_cmd("bbt.p3actor", "show")["state"], 16) + 4)
+
     def test_daffy_waits_for_seat_3(self):
         c, p = self.c, self.p
         self.assertTrue(p.straight_to_game(two=True), f"no 2-player Granwich (level {p.level()})")
-        c.wait_frames(120)
+        for _ in range(8):                                 # the opening dialogs
+            c.press(pad("cross")); c.wait_frames(150)
+        # play a little first, so Taz is no longer as the level loaded him
+        c.hold(pad("right"), port=2); c.wait_frames(60); c.release(port=2); c.wait_frames(60)
         k = self.k()
         self.assertGreaterEqual(k.get("no_third_player", 0), 1)
         self.assertEqual((k.get("spawned", 0), k.get("p3_joined", 0)), (0, 0),
                          "Daffy came with a Player 3 setting but nobody at seat 3")
+        self.assertEqual(self.clone(), 0)
+        # seat 3 presses a button during the level: Daffy comes at once, next to Taz
         c.mod_cmd("bbt.p3", f"{pad('cross'):04X}"); c.wait_frames(10); c.mod_cmd("bbt.p3", "off")
-        c.wait_frames(10)
-        self.assertEqual(self.k().get("p3_joined"), 1, "seat 3's button did not join")
+        self.assertTrue(c.wait_until(lambda: self.k().get("spawned", 0) >= 1, 120, 5),
+                        f"no Daffy in the level after seat 3's button: {self.k()}")
+        k = self.k()
+        self.assertEqual((k.get("p3_joined"), k.get("spawned_in_level")), (1, 1), k)
+        a, taz = self.clone(), p.actor(2)
+        self.assertTrue(a, "no clone address")
+        c.wait_frames(90)                                  # its first updates: model bound, on the ground
+        self.assertGreaterEqual(self.k().get("updates", 0), 30, "the clone is not updated")
+        self.assertNotEqual(c.u32(a + 0x9C), 0, "the clone has no model (draw nodes)")
+        ax, ay, az = p.pos(a); tx, ty, tz = p.pos(taz)
+        self.assertLessEqual(max(abs(ax - tx), abs(az - tz)), 400, f"not next to Taz: {(ax, ay, az)} vs {(tx, ty, tz)}")
+        self.assertLessEqual(abs(ay - ty), 300, f"not on Taz's ground: {ay} vs {ty}")
+        try:
+            c.screenshot(self.out / "joined_in_level.png")
+        except Exception:  # noqa: BLE001  (headless without a picture)
+            pass
+        # seat 3 moves it; Taz stays
+        tx0 = p.pos(taz)
+        c.mod_cmd("bbt.p3", f"{pad('left'):04X}"); c.wait_frames(60); c.mod_cmd("bbt.p3", "off"); c.wait_frames(20)
+        bx, _, bz = p.pos(a)
+        self.assertGreater(abs(bx - ax) + abs(bz - az), 100, "seat 3 does not move the clone")
+        self.assertEqual(p.pos(taz), tx0, "seat 3 moved Taz")
+        self.assertEqual(c.u8(VIEW_COUNT), 1, "one PC keeps the shared screen")
+        # and he is there from the start of the next level
         self.assertTrue(p.jump_to_level(LEVEL_VICA01), "the next level did not load")
-        self.assertTrue(c.wait_until(lambda: self.k().get("spawned", 0) >= 1, 900, 10),
+        self.assertTrue(c.wait_until(lambda: self.k().get("spawned", 0) >= 2, 900, 10),
                         "no Daffy at the next level after joining")
+        self.assertEqual(self.k().get("spawned_in_level"), 1)
 
 
 if __name__ == "__main__":

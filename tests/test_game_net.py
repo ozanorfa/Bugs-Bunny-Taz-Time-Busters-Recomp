@@ -355,10 +355,13 @@ class NetplayWithMods(unittest.TestCase):
                 c.press(pad("cross")); c.wait_frames(150)
             for pe in m.peers:
                 pe.client.hold(pad("up"))
+            presents, tick = c.counters().get(V + "main_presents", 0), host.status()["tick"]
             c.wait_frames(120)
             for pe in m.peers:
                 pe.client.release()
             c.wait_frames(60)
+            pace = (c.counters().get(V + "main_presents", 0) - presents) / max(1, host.status()["tick"] - tick)
+            self.assertGreater(pace, 0.45, f"the game makes {pace:.2f} frames per vblank with three views (0.5 = full speed)")
             m.check_alive()
             for pe in m.peers:
                 k = {kk[len(V):]: v for kk, v in pe.client.counters().items() if kk.startswith(V)}
@@ -373,13 +376,16 @@ class NetplayWithMods(unittest.TestCase):
                     self.assertEqual(pe.client.send({"cmd": "render_pass_stats"}).get("watchdog"), 0,
                                      "an own-view draw ran into the watchdog")
                     self.assertEqual(pe.status()["desync"], 0)
-                    # three 72-line bands from row 16 (own_view.c env_for_view_wrap):
-                    # the pictures change abruptly at rows 88 and 160 (measured
-                    # 42-54 against a median row change of ~4)
+                    # In a match the frame the game builds (three 72-line bands)
+                    # is not shown, so its models are not drawn (own_view.c
+                    # model_emit_wrap): the shared picture has no band edges
+                    # at rows 88 and 160 any more, and the game still runs
+                    # its 30 frames a second (one frame per two vblanks; it
+                    # was 0.21-0.38 per vblank while the models were drawn).
+                    self.assertGreater(k.get("shared_emits_skipped", 0), 1000, f"the shared frame's models: {k}")
                     jumps = row_jumps(shared)
-                    floor = 5 * statistics.median(jumps)
-                    self.assertTrue(all(jumps[round(b * len(jumps) / 240)] > floor for b in (88, 160)),
-                                    "the shared frame is not three bands")
+                    self.assertLess(max(jumps[round(b * len(jumps) / 240)] for b in (88, 160)), 8,
+                                    "the shared frame still shows the bands' pictures")
                     self.assertEqual(dark_rows(row_means(shown), 0.2, 0.8), [],
                                      "the presented image is still split")
         compared, bad = m.compare_digests()

@@ -56,13 +56,18 @@
  * as a copy of record 1 with its own view-unit pointer, view 2's actor is set
  * at every frame start, and the EXE's 3-view screen-area entry, which points
  * back at the 2-view table, is replaced by three 72-line bands
- * (env_for_view_wrap). Its primitives go to an arena of their own: a frame's
- * primitives and the frame the GPU may still read share the game's ring
- * (227,952 bytes), and three views (~110 KB a frame) overflowed it, so the
- * allocators waited forever for room only the next present frees. While view
- * 2 draws, the game's primitive pointer, ring bounds and in-flight marks
- * point into one of three arenas in the GPU-DMA aperture (one per frame
- * buffer; 24-bit list tags reach it), and frame_wrap puts them back.
+ * (env_for_view_wrap). The views' primitives go to an arena of their own: a
+ * frame's primitives and the frame the GPU may still read share the game's
+ * ring (227,952 bytes), which two or three views (70-110 KB a frame) fill, so
+ * the allocators waited for room only the next present frees (three views:
+ * forever; two: frames of 5 vblanks). While a frame's views draw, the game's
+ * primitive pointer, ring bounds and in-flight marks point into one of three
+ * arenas in the GPU-DMA aperture (one per frame buffer; 24-bit list tags
+ * reach it), and frame_wrap puts them back (view_step_prehook).
+ *
+ * In a match the shared frame's models are not drawn at all (nobody sees
+ * it): model_emit_wrap. With that the frame fits two vblanks without the
+ * cycle scale, which a match therefore turns off (frame_wrap).
  *
  * With more than one view the frame loop also links a 6-word packet into
  * OT bucket 1 of 0x80093CC4 for the last view (its pointer kept at
@@ -293,7 +298,7 @@ static const struct { uint32_t addr, bytes; } kCameraGlobals[] = {
 static uint32_t g_view_lists;          /* list of view v at + (v - 1) * LIST_BYTES */
 static uint32_t g_view_cameras;        /* bank of view v at + (v - 1) * CAMERA_BANK_BYTES */
 
-/* View 2's primitives (see view_step_prehook): one arena per frame buffer in
+/* The views' primitives (see view_step_prehook): one arena per frame buffer in
  * the GPU-DMA aperture, which 24-bit linked-list tags reach. */
 #define VIEW2_ARENA_BYTES   0x40000u
 #define ADDR_PRIM_RING_LO   0x8008DE4Cu   /* primitive ring start (Level_LoadParse) */
@@ -304,6 +309,8 @@ static uint32_t g_view2_arena;
  * one frame_wrap call (no state between frames) */
 static struct { uint32_t prim, lo, hi, in0, in1, start, frame; int active; } g_ring;
 
+static int arena_span(uint32_t a, uint32_t bytes);
+static uint32_t g_emits_skipped;       /* model draws skipped since the last frame start (counter only) */
 static uint32_t view_list(uint32_t v) { return g_view_lists + (v - 1u) * LIST_BYTES; }
 static uint32_t view_bank(uint32_t v) { return g_view_cameras + (v - 1u) * CAMERA_BANK_BYTES; }
 
@@ -623,6 +630,16 @@ static int frame_wrap(CPUState* cpu)
         return 1;
     }
     raise_view_count();
+    /* The cycle scale (game.toml [timing]) is for one PC's split screen,
+     * where every view is drawn. A match draws none of them in the shared
+     * frame (model_emit_wrap), so its frame fits two vblanks without the
+     * scale, and at 1 the game's waits cost the host a quarter of the
+     * instructions. The gate state is in savestates and rollback snapshots. */
+    psx_mod_set_guest_cycle_scale_gate(psx_netplay_active() ? 0 : 1);
+    if (g_emits_skipped) {
+        psx_mod_counter_add(PLUGIN ".shared_emits_skipped", g_emits_skipped);
+        g_emits_skipped = 0;
+    }
     if (psx_mod_read_byte(ADDR_VIEW_COUNT) > 1) {
         main_loop_present(cpu);
     } else if (g_copies[0].generation == g_generation || g_copies[1].generation == g_generation ||
@@ -644,10 +661,8 @@ static int frame_wrap(CPUState* cpu)
     if (psx_mod_read_byte(ADDR_VIEW_COUNT) > 1) {
         const uint32_t frame = psx_mod_read_half(ADDR_FRAME_INDEX);
         const uint32_t pkt = frame < 3 ? psx_mod_read_word(ADDR_EXTRA_PACKETS + frame * 4u) : 0;
-        /* with three views the last view, and so this packet, is in view 2's arena */
-        const int in_arena = g_view2_arena && pkt >= g_view2_arena &&
-                             pkt + 28u <= g_view2_arena + 3u * VIEW2_ARENA_BYTES;
-        if (in_main_ram(pkt) || in_arena) {
+        /* the views draw into the frame's arena, so this packet is there */
+        if (in_main_ram(pkt) || arena_span(pkt, 28u)) {
             for (uint32_t k = 1; k <= 6; ++k)
                 psx_mod_write_word(pkt + 4u * k, 0);
         }
@@ -775,6 +790,11 @@ static int camera_update_wrap(CPUState* cpu)
     return 1;
 }
 
+static int arena_span(uint32_t a, uint32_t bytes)
+{
+    return g_view2_arena && a >= g_view2_arena && a + bytes <= g_view2_arena + 3u * VIEW2_ARENA_BYTES;
+}
+
 static int view_step_prehook(CPUState* cpu)
 {
     (void)cpu;
@@ -782,28 +802,27 @@ static int view_step_prehook(CPUState* cpu)
         return 0;
     const uint32_t frame = psx_mod_read_half(ADDR_FRAME_INDEX);
     const uint32_t view = psx_mod_read_byte(ADDR_VIEW_INDEX);
-    const uint32_t prim = psx_mod_read_word(ADDR_PRIM_NEXT);
-    if (frame >= 3 || view >= 4 || !in_main_ram(prim) || (prim & 3u))
+    if (frame >= 3 || view >= 4)
         return 0;
-    /* link at the head of the bucket, as FUN_80059314 does */
-    const uint32_t bucket = ADDR_OT_FIRST + (OT_FIRST_BUCKETS - 1u) * 8u;
-    const uint32_t head = psx_mod_read_word(bucket);
-    psx_mod_write_word(bucket, prim);
-    if (head == 0)
-        psx_mod_write_word(bucket + 4u, prim);
-    psx_mod_write_word(prim, (ENV_WORDS << 24) | (head & 0x00FFFFFFu));
-    for (uint32_t k = 1; k <= ENV_WORDS; ++k)
-        psx_mod_write_word(prim + 4u * k, 0);           /* NOPs until the present fills it */
-    psx_mod_write_word(ADDR_PRIM_NEXT, prim + 4u * (ENV_WORDS + 1u));
-    psx_mod_write_word(ADDR_ENV_SLOTS + (frame * 4u + view) * 4u, prim);
-    if (view == 2u && g_view2_arena && !g_ring.active) {
-        /* A frame's primitives and the frame the GPU may still be reading
-         * share the game's ring (227,952 bytes); three views (~110 KB a
-         * frame) overflow it and the allocators (FUN_8005A718 / B798 / D480)
-         * wait forever for room only a present can free. View 2 draws into
-         * its own arena: the game's pointer, ring bounds and in-flight
-         * marks point there until the frame ends (frame_wrap puts them
-         * back). The draws run as usual, with all their side effects. */
+    if (g_view2_arena && !g_ring.active) {
+        /* The frame's first view step. A frame's primitives and the frame
+         * the GPU may still be reading share the game's ring (227,952
+         * bytes). With two or three views (70-110 KB a frame) it is nearly
+         * full, and the allocators (FUN_8005A718 / B798 / D480) then wait at
+         * their entry: while the write pointer is within 0x1000 bytes of the
+         * oldest in-flight frame (0x8008DDF0) and fewer than 5 vblanks have
+         * passed since the last present (0x8008DCDC; 0x8005B798..7EC), they
+         * spin. A present moves the mark, and with our views the present is
+         * at the frame start, so a frame that met the wait took 5 vblanks
+         * instead of 2 (measured in a 3-peer match: 0.21-0.38 frames per
+         * vblank instead of 0.5, and a third of the host's time in that
+         * loop). So every view of a frame draws into the frame buffer's own
+         * arena in the GPU-DMA aperture (256 KB, 24-bit list tags reach it;
+         * it is written again three frames later, long after the GPU read
+         * it): the game's pointer, ring bounds and in-flight marks point
+         * there until the frame ends (frame_wrap puts them back), and the
+         * allocators never wait. The main ring keeps its pointer; the
+         * own-view rerun (one view) draws there. */
         g_ring.prim = psx_mod_read_word(ADDR_PRIM_NEXT);
         g_ring.lo = psx_mod_read_word(ADDR_PRIM_RING_LO);
         g_ring.hi = psx_mod_read_word(ADDR_PRIM_RING_HI);
@@ -819,7 +838,69 @@ static int view_step_prehook(CPUState* cpu)
         psx_mod_write_word(ADDR_PRIM_IN_FLIGHT, hi);
         psx_mod_write_word(ADDR_PRIM_IN_FLIGHT + 4u, hi);
     }
+    const uint32_t prim = psx_mod_read_word(ADDR_PRIM_NEXT);
+    if ((prim & 3u) || !(in_main_ram(prim) || arena_span(prim, 4u * (ENV_WORDS + 1u))))
+        return 0;
+    /* link at the head of the bucket, as FUN_80059314 does */
+    const uint32_t bucket = ADDR_OT_FIRST + (OT_FIRST_BUCKETS - 1u) * 8u;
+    const uint32_t head = psx_mod_read_word(bucket);
+    psx_mod_write_word(bucket, prim);
+    if (head == 0)
+        psx_mod_write_word(bucket + 4u, prim);
+    psx_mod_write_word(prim, (ENV_WORDS << 24) | (head & 0x00FFFFFFu));
+    for (uint32_t k = 1; k <= ENV_WORDS; ++k)
+        psx_mod_write_word(prim + 4u * k, 0);           /* NOPs until the present fills it */
+    psx_mod_write_word(ADDR_PRIM_NEXT, prim + 4u * (ENV_WORDS + 1u));
+    psx_mod_write_word(ADDR_ENV_SLOTS + (frame * 4u + view) * 4u, prim);
     return 0;
+}
+
+/* A match shows every PC its own view, drawn by the own-view rerun; the
+ * frame the game itself builds, with every view in a band, is never shown
+ * (only for a frame whose own view could not be drawn). Its models are
+ * therefore not turned into primitives there: the two emitters return at
+ * once. Everything else the draw walk FUN_8005EEDC does still runs, once per
+ * view as before: the poses (FUN_80058474), the fades, the camera record's
+ * bits 0x100 / 0x200 that Camera_Update reads (FUN_8005DE54), the shadow
+ * list, the static models' own counters (FUN_8005A7A0). The emitters only
+ * write the scratchpad draw context, a draw stamp (0x80081A2C) and the
+ * primitives (Ghidra).
+ *   FUN_8005ACAC(actor, nodes, ctx): an animated model; returns nothing.
+ *   FUN_80059440(nodes, prim, ctx) -> the primitive pointer after the mesh.
+ * Measured (3 peers on one M1, Release build, 2x GL cap): with the models
+ * drawn 28-34 ticks a second; without them and with the cycle scale off
+ * 60 a second, the game at its 30 frames (NOTES.md "Own view at full
+ * speed"). Guest state decides (a match, more than one view, not the
+ * rerun), so every peer and every rollback replay does the same. One PC's
+ * split screen shows the bands and draws everything. */
+#define ADDR_MODEL_EMIT     0x8005ACACu
+#define ADDR_MESH_EMIT      0x80059440u
+/* addiu sp,sp,-0x18 / sw ra,0x10(sp) / lw a3,0(a2) / nop */
+static const uint32_t kModelEmitGuard[4] = {0x27BDFFE8u, 0xAFBF0010u, 0x8CC70000u, 0x00000000u};
+/* addiu sp,sp,-0x28 / sw ra,0(sp) / sw s8,4(sp) / sw s7,8(sp) */
+static const uint32_t kMeshEmitGuard[4] = {0x27BDFFD8u, 0xAFBF0000u, 0xAFBE0004u, 0xAFB70008u};
+
+static int shared_frame_unseen(void)
+{
+    return psx_netplay_active() && !psx_mod_local_view_scope() && bbt_view_count() > 1u;
+}
+
+static int model_emit_wrap(CPUState* cpu)
+{
+    (void)cpu;
+    if (!shared_frame_unseen())
+        return 0;
+    ++g_emits_skipped;
+    return 1;
+}
+
+static int mesh_emit_wrap(CPUState* cpu)
+{
+    if (!shared_frame_unseen())
+        return 0;
+    cpu->gpr[2] = cpu->gpr[5];
+    ++g_emits_skipped;
+    return 1;
 }
 
 /* The EXE's 3-view entry of the screen-area table points back at the 2-view
@@ -1131,6 +1212,12 @@ PSX_MOD_CONSTRUCTOR(register_bbt_own_view)
                                              kPresentGuard, 4, FO_CREDIT_SELF);
     (void)psx_mod_register_function_override(PLUGIN ":view-env", ADDR_VIEW_STEP,
                                              view_step_prehook, kViewStepGuard, 4,
+                                             FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(PLUGIN ":shared-model", ADDR_MODEL_EMIT,
+                                             model_emit_wrap, kModelEmitGuard, 4,
+                                             FO_CREDIT_SELF);
+    (void)psx_mod_register_function_override(PLUGIN ":shared-mesh", ADDR_MESH_EMIT,
+                                             mesh_emit_wrap, kMeshEmitGuard, 4,
                                              FO_CREDIT_SELF);
     (void)psx_mod_register_function_override(PLUGIN ":frame", ADDR_FRAME, frame_wrap,
                                              kFrameGuard, 4, FO_CREDIT_SELF);

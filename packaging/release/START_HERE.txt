@@ -32,8 +32,8 @@ Nothing needs to be set in Mods. Out of the box:
   PLAYERS menu); no long intro, short loading screens.
 - Own view: in a match, every PC shows its own player full screen.
 - Third player: Daffy Duck joins when a third player is there (three
-  seated in a LAN room; on one PC, once Player 3 presses a button, from
-  the next level start). With two players he stays away.
+  seated in a LAN room; on one PC, as soon as Player 3 presses a
+  button). With two players he stays away.
 - Decorations are off. To hang a Turkish flag from the windows of Granny's
   house: Mods -> Decorations.
 - The picture is drawn in true colour, without the PlayStation's dither

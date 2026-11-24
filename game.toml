@@ -61,6 +61,11 @@ dithering = "off"
 # "Timing block"); the scale is part of the netplay fingerprint.
 [timing]
 guest_cycle_scale = 4
+# ... and only while the own-view plugin holds its gate open: on one PC (the
+# split screen, where every view is drawn). A match does not draw the shared
+# frame's models, so it needs no scale and runs at 1 (src/mods/own_view.c
+# frame_wrap; NOTES.md "Own view at full speed").
+guest_cycle_scale_gated = true
 guest_cycle_scale_gate = [
   { addr = 0x8008DE00, size = 1, mask = 0xFE, value = 2 },
 ]

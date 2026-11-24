@@ -56,8 +56,8 @@ player full screen with its own camera.
      itself, so with only Player 1 set up the game starts for one player
      (Taz on the computer, no Daffy). A keyboard player needs their own
      keys (Configure), or the keys move two players. Then NEW
-     GAME -> TWO PLAYERS -> START GAME; Player 3 presses any button before
-     START GAME and Daffy comes too. Online this is not needed: every PC
+     GAME -> TWO PLAYERS -> START GAME; Player 3 presses any button, at any
+     time, and Daffy comes next to Taz. Online this is not needed: every PC
      uses its own PLAYER 1.
 6. For a match: the first time you host or join, Windows Defender Firewall
    asks about the game. Tick both **Private** and **Public** networks (a
@@ -79,9 +79,9 @@ The Mods page out of the box (everything on except Decorations):
   screen (option "On one PC": split screen instead).
 - **Third player: Daffy Duck:** he joins next to Taz only when there is a
   third player: three seated in a LAN room, or, on one PC, once Player 3
-  (a controller chosen on the PLAYER 3 card) presses any button. He then comes
-  at the next level start, so press before START GAME to have him in the
-  first level. With two players he stays away. Options:
+  (a controller chosen on the PLAYER 3 card) presses any button: he comes at
+  once, next to Taz, also in the middle of a level. With two players he
+  stays away. Options:
   Character (Daffy, or the Transylvania enemy), Daffy's sounds (Bugs' steps,
   jumps and attack; Taz's; or none of Taz's), and when Daffy is out (back
   next to Taz after 5 seconds, the default; or the game's rule for Bugs and

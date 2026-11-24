@@ -46,8 +46,8 @@ the host's Mods count for every PC.
 - **When he comes:** only when there is a third player.
   - **Online:** three players seated in the room; seat 3 is Daffy.
   - **One PC:** choose a controller on the launcher's **PLAYER 3** card;
-    Daffy comes at the next level start once Player 3 presses any button. To
-    have him in the first level, press before START GAME.
+    Daffy comes next to Taz as soon as Player 3 presses any button, also in
+    the middle of a level.
   - With two players he stays away.
 - **When he is out:** he comes back next to Taz after 5 seconds (next to Bugs
   if Taz is out), with full health and no life lost. A package that brings a
@@ -76,17 +76,18 @@ mod every player gets their own camera:
 
 *Split screen on one PC, one band per player.*
 
-**It costs speed.** Every PC draws the scene a second time every frame for
-its own view:
+**Speed.** Every PC draws the scene a second time every frame for its own
+view:
 - The start files cap the picture at 2x so that this extra drawing fits in a
   frame.
-- In the first Windows test (three PCs) it was still too slow, so the host
-  turned the own view off for the match, and the speed was fine.
-- If a match is slow or choppy, switch it off on the host (Mods -> Own view
-  for every player). Everyone then plays on the game's shared camera.
-- With three views, a few heavy scenes run below full speed: the Viking boss
-  level and a few others, at about 60-85 %. This is the emulated graphics
-  chip's time, a framework limit.
+- Up to version 0.5.0 a match with own view ran far too slowly (in the first
+  Windows tests the host turned it off). Since 0.6.0 a match no longer draws
+  the picture nobody sees, and on our test machine three players run at full
+  speed with own view on. Not yet tried on Windows PCs.
+- If a match is still slow or choppy, switch it off on the host (Mods -> Own
+  view for every player). Everyone then plays on the game's shared camera.
+- Split screen on one PC draws three views, and a few heavy scenes run below
+  full speed there: the Viking boss level and a few others.
 
 ### Quick start
 

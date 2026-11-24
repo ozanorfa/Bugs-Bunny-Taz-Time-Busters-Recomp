@@ -11,6 +11,9 @@ room refuses a guest whose packages are another version. A version marked
 ## 0.6.0 — not yet given to players
 
 ### Added
+- **Player 3 joins at any time on one PC.** When Player 3 presses a button,
+  Daffy comes next to Taz at once, also in the middle of a level. Before, he
+  came only at the next level start.
 - **Daffy comes back on his own.** 5 seconds after he is out he returns next
   to Taz (or next to Bugs if Taz is out), with full health and no life lost.
   A new option, "When Daffy is out", keeps the game's rule for Bugs and Taz
@@ -39,6 +42,11 @@ room refuses a guest whose packages are another version. A version marked
 - The launcher no longer labels Own View and Third Character "in development".
 
 ### Fixed
+- **Own view no longer slows a match down.** With every PC showing its own
+  player, the game ran at about a third of its speed, with choppy sound. A
+  match now skips drawing the shared picture that no PC shows, and the game's
+  drawing buffer no longer fills up. Three players with own view on run at
+  full speed on our test machine. Not yet tried on Windows PCs.
 - **Changing Mods in a LAN room should no longer split the next match.**
   The mods' memory now sits at the same place on every PC whatever was
   played before, it is cleared before every match, and switching between

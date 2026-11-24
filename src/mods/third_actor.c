@@ -161,7 +161,7 @@
 /* Mod guest block (allocated once; fixed layout so savestates match). */
 #define BLK_SIZE     0x20000u
 #define BLK_STATE    0x0000u
-#define BLK_SOURCE   0x0100u   /* Taz's actor as it was copied (diagnostics) */
+#define BLK_SOURCE   0x0100u   /* Taz's actor as it was at the level's first actor pass (the clone's template) */
 #define BLK_NODES    0x0300u
 #define BLK_ENTRIES  0x0900u
 #define BLK_RECORDS  0x1700u
@@ -185,7 +185,9 @@
 #define ST_P3_JOINED 0x48u    /* one PC: seat 2 has pressed a button (the third player joined) */
 #define ST_TEST_PACKAGE 0x4Cu /* tests only (debug command "package"): the actor to run the package action for */
 #define ST_OUT_FRAMES 0x50u   /* game frames since it went out (option "comeback" = "auto") */
-#define ST_LAST      ST_OUT_FRAMES
+#define ST_KEPT_TAZ  0x54u    /* Taz's placed actor whose untouched copy BLK_SOURCE holds (0 = none): a join during a level */
+#define ST_KEPT_LEVEL 0x58u   /* and the level id it was kept in */
+#define ST_LAST      ST_KEPT_LEVEL
 #define COMEBACK_FRAMES 150u  /* 5 s at the game's 30 frames a second (0.5 per vblank, test_game_ownview3 test 3) */
 #define ADDR_VIEW_INDEX 0x8008DEA0u /* byte: the view FUN_80011AF0 is running (own_view.c) */
 #define STATE_MAGIC  0x33544242u
@@ -559,9 +561,14 @@ static int upload_textures(uint32_t sp)
     return failed == 0;
 }
 
+static int place_next_to_partner(uint32_t a);
+
 /* Spawn the clone of Taz. Called at the start of an actor pass, before the
- * game builds its update list. */
-static void spawn(CPUState* cpu, uint32_t taz)
+ * game builds its update list. `kept`: Taz has been played since the load
+ * (a join during a level), so the clone starts from the untouched copy of
+ * him taken at the level's first actor pass (BLK_SOURCE) and is put next to
+ * a hero in play; his resource list is the same all level. */
+static void spawn(CPUState* cpu, uint32_t taz, int kept)
 {
     /* Taz's resource list. */
     static CloneResIn in[CLONE_RES_MAX];
@@ -615,8 +622,13 @@ static void spawn(CPUState* cpu, uint32_t taz)
     write_bytes(g_block + BLK_RECORDS, records, (uint32_t)nrec * ANIM_RECORD_SIZE);
 
     uint8_t act[ACTOR_SIZE];
-    read_bytes(taz, act, ACTOR_SIZE);
-    write_bytes(g_block + BLK_SOURCE, act, ACTOR_SIZE);
+    if (kept) {
+        read_bytes(g_block + BLK_SOURCE, act, ACTOR_SIZE);
+    } else {
+        read_bytes(taz, act, ACTOR_SIZE);
+        write_bytes(g_block + BLK_SOURCE, act, ACTOR_SIZE);
+    }
+    st_set(ST_KEPT_TAZ, 0);
     wr32(act + A_NEXT, 0);
     act[A_POOL_FLAGS] &= (uint8_t)~1u;
     wr32(act + A_RES, g_layout.nodes);
@@ -653,6 +665,10 @@ static void spawn(CPUState* cpu, uint32_t taz)
     }
     write_bytes(a, act, ACTOR_SIZE);
     psx_mod_write_word(tail + A_NEXT, a);
+    if (kept) {
+        (void)place_next_to_partner(a);    /* where the heroes are now, not where the level began */
+        count("spawned_in_level", 1);
+    }
 
     st_set(ST_ACTOR, a);
     st_set(ST_LEVEL, psx_mod_read_word(ADDR_LEVEL_ID));
@@ -893,8 +909,8 @@ int bbt_p3_out(void)
  * set to "gamepad" counts as connected even with no pad plugged in, so a
  * player who once set Player 3 up got an idle Daffy in every 2-player game
  * (pointed out by the Fighting Force session, which drops players in with
- * X). The game checks at a level's first actor pass, so a join during a
- * level takes effect at the next level. */
+ * X). A join during a level brings the clone at once (actor_pass_wrap, the
+ * kept copy of Taz); in a match the seats are fixed when it starts. */
 static int third_player_present(void)
 {
     if (g_appear_always)
@@ -947,14 +963,30 @@ static int actor_pass_wrap(CPUState* cpu)
      * without the clone; the shared game spawns it as usual. */
     if (!a && (psx_mod_read_byte(ADDR_MODE_FLAGS) & MODE_TWO_PLAYER) && !psx_mod_local_view_scope()) {
         const uint32_t taz = placed_taz();
-        if (source_pristine(taz) && !third_player_present()) {
+        const uint32_t level = psx_mod_read_word(ADDR_LEVEL_ID);
+        const int pristine = source_pristine(taz);
+        if (pristine && !third_player_present()) {
+            /* Nobody at seat 3 yet: keep Taz as he is now, so a player who
+             * joins during this level gets a clone that starts as a freshly
+             * loaded actor does (the same on every netplay peer; only one PC
+             * uses it). */
+            uint8_t act[ACTOR_SIZE];
+            read_bytes(taz, act, ACTOR_SIZE);
+            write_bytes(g_block + BLK_SOURCE, act, ACTOR_SIZE);
+            st_set(ST_KEPT_TAZ, taz);
+            st_set(ST_KEPT_LEVEL, level);
             count("no_third_player", 1);
-        } else if (source_pristine(taz)) {
-            spawn(cpu, taz);
-            a = st_get(ST_ACTOR);
-            if (a && st_get(ST_OUT))
-                take_out(a);                   /* still out from an earlier level */
+        } else if (pristine) {
+            spawn(cpu, taz, 0);
+        } else if (taz && taz == st_get(ST_KEPT_TAZ) && level == st_get(ST_KEPT_LEVEL) &&
+                   !psx_netplay_active() && third_player_present()) {
+            /* One PC: seat 3 pressed a button during the level. In a match
+             * the seats are fixed when it starts. */
+            spawn(cpu, taz, 1);
         }
+        a = st_get(ST_ACTOR);
+        if (a && st_get(ST_OUT))
+            take_out(a);                       /* still out from an earlier level */
     }
     if (!psx_mod_local_view_scope())
         watch_team(a);

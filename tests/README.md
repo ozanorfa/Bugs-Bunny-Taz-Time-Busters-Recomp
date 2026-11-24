@@ -147,7 +147,8 @@ run against `build-release`, which holds your own mod selection
   the third player does not appear without a controller for seat 3,
   one PC keeps the game's shared screen, and the Turkish flag is off. `OfflineJoin`: with Player 3 set
   to the keyboard but no key pressed there is no Daffy; after a Player 3
-  key press he comes at the next level start. `Defaults` test_2: every
+  key press during the level he comes at once, next to Taz, moves with
+  seat 3's input, and is there again at the next level start. `Defaults` test_2: every
   `bbt.*` function override is armed and none counted a guard miss
   (`func_override` debug command): after a framework update or a
   regenerate, a hook whose guard words no longer match silently stops

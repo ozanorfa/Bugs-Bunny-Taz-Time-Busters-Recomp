@@ -8,7 +8,10 @@ Radmin VPN with the players' ZIP 0.5.0 (section 8).
 - The game built on every PC and matches ran.
 - The matches ended after a few minutes. The start files now wait 5 s
   instead of 1.5 s; that is not yet tested.
-- The own view was turned off for speed.
+- The own view was turned off for speed. Version 0.6.0 removes the cause
+  found since (a match drew a picture nobody saw, and the game waited on a
+  full drawing buffer); with it three players run at full speed with own
+  view on, on a Mac. Not yet tried on Windows.
 
 A Mac <-> Windows match is not promised by the framework docs and has not
 been tried.
