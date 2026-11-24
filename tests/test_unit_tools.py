@@ -231,13 +231,14 @@ class GameRunHelpers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             src = d / "game.toml"
-            src.write_text('[game]\nplayers = 2\nexe = "disc/SLUS_011.44"\ndisc = "/x/y.cue"\n\n'
+            cue = (d / "x" / "y.cue").resolve().as_posix()  # absolute on every OS
+            src.write_text(f'[game]\nplayers = 2\nexe = "disc/SLUS_011.44"\ndisc = "{cue}"\n\n'
                            '[controller]\ndefault_mode = "digital"\n\n[netplay]\nrequire_cue = true\n')
             out = game.three_player_toml(src, d / "out.toml")
             text = out.read_text()
             self.assertIn("players = 3", text)
             self.assertIn(f'exe = "{(d / "disc/SLUS_011.44").resolve().as_posix()}"', text)
-            self.assertIn('disc = "/x/y.cue"', text)
+            self.assertIn(f'disc = "{cue}"', text)
             ctrl = text.split("[controller]")[1].split("[netplay]")[0]
             self.assertIn("multitap_port = 2", ctrl)
             try:
@@ -290,11 +291,12 @@ class GameRunHelpers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             src = Path(d) / "proj" / "game.toml"
             src.parent.mkdir()
-            src.write_text('[game]\nplayers = 2\nexe = "disc/X.EXE"\ndisc = "/abs/d.cue"\n\n[controller]\ndefault_mode = "digital"\n')
+            cue = (Path(d) / "abs" / "d.cue").resolve().as_posix()  # absolute on every OS
+            src.write_text(f'[game]\nplayers = 2\nexe = "disc/X.EXE"\ndisc = "{cue}"\n\n[controller]\ndefault_mode = "digital"\n')
             dst = game.game_toml_copy(src, Path(d) / "out" / "game.toml")
             text = dst.read_text()
             self.assertIn(f'exe = "{(src.parent / "disc/X.EXE").resolve().as_posix()}"', text)
-            self.assertIn('disc = "/abs/d.cue"', text)
+            self.assertIn(f'disc = "{cue}"', text)
             self.assertIn("players = 2", text)
             self.assertIn('default_mode = "digital"', text)
 
