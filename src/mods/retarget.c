@@ -377,8 +377,10 @@ static int normalize(const int32_t v[3], int64_t out[3])
     const int64_t len_q14 = isqrt64(sq << 28);
     if (len_q14 == 0)
         return 0;
+    /* a multiply, not v << 28: shifting a negative value left is undefined
+     * in C (UBSan); |v| < 2^17 here, so the product is the same value */
     for (int i = 0; i < 3; ++i)
-        out[i] = ((int64_t)v[i] << 28) / len_q14;
+        out[i] = (int64_t)v[i] * ((int64_t)1 << 28) / len_q14;
     return 1;
 }
 
@@ -552,8 +554,10 @@ static void pose_for(const RtRig* rig, const RtState* src, RtState* out)
             continue;
         int32_t rs[9], cpt[9], m[9];
         rt_euler_to_matrix(src[s].rot, rs);
+        /* a parent byte can be up to 255; the tables hold 64 nodes (BUGS
+         * #58). The bound changes nothing for any parent below 64. */
         const int p = rig->dst_parent[d];
-        if (p > 0)
+        if (p > 0 && p < RT_MAX_NODES)
             mat_transpose(rig->corr[p], cpt);
         else
             mat_identity(cpt);

@@ -402,6 +402,36 @@ static void retarget_can_drop_root_commands(void)
     free(rig);
 }
 
+/* BUGS #58: a parent byte past the 64-node tables (a corrupted file). The
+ * target's node 5 names parent 0xC8; retargeting must not read corr[0xC8]. */
+static void retarget_survives_a_parent_past_the_tables(void)
+{
+    static Blob s, bad, r, m;
+    skeleton(&s);
+    blob_begin(&bad);
+    frame_begin(&bad);
+    cmd(&bad, 0x0801, NULL, 0);
+    const uint16_t p2 = 0x0101, p3 = 0x0202, p4 = 0x0203, p5 = 0xC804;
+    cmd(&bad, 0x0C02, &p2, 1);
+    cmd(&bad, 0x0C03, &p3, 1);
+    cmd(&bad, 0x0C04, &p4, 1);
+    cmd(&bad, 0x0C05, &p5, 1);
+    frame_end(&bad);
+    rest(&r);
+    moving(&m, 3);
+    uint8_t parent[RT_MAX_NODES];
+    CHECK_EQ(rt_skeleton(bad.b, bad.len, parent, RT_MAX_NODES), 5);
+    CHECK_EQ(parent[5], 0xC8);
+    RtRig* rig = (RtRig*)malloc(sizeof *rig);
+    REQUIRE(rig != NULL);
+    CHECK(rt_rig_build(rig, s.b, s.len, r.b, r.len, bad.b, bad.len, r.b, r.len, kSelf, 5, 2, 2,
+                       kToes, kToes));
+    static uint8_t out[8192];
+    const uint8_t hdr[8] = {0x50, 0, 4, 0, 3, 0, 0, 0};
+    CHECK(rt_retarget(rig, m.b, m.len, hdr, 3, out, sizeof out) > 8);
+    free(rig);
+}
+
 const TestCase kRetargetTests[] = {
     {"retarget_can_drop_root_commands", retarget_can_drop_root_commands},
     {"euler_round_trip", euler_round_trip},
@@ -410,5 +440,6 @@ const TestCase kRetargetTests[] = {
     {"retarget_onto_itself_keeps_the_rotations", retarget_onto_itself_keeps_the_rotations},
     {"retarget_resamples_to_the_asked_length", retarget_resamples_to_the_asked_length},
     {"retarget_range_shows_a_cut_move_whole", retarget_range_shows_a_cut_move_whole},
+    {"retarget_survives_a_parent_past_the_tables", retarget_survives_a_parent_past_the_tables},
 };
 const int kRetargetTestCount = (int)(sizeof(kRetargetTests) / sizeof(kRetargetTests[0]));

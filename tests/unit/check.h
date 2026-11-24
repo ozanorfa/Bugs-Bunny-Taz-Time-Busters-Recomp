@@ -58,5 +58,7 @@ extern const TestCase kCloneResTests[];
 extern const int kCloneResTestCount;
 extern const TestCase kRetargetTests[];
 extern const int kRetargetTestCount;
+extern const TestCase kModBlocksTests[];
+extern const int kModBlocksTestCount;
 
 #endif /* BBT_CHECK_H */

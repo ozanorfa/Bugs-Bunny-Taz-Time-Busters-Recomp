@@ -41,6 +41,7 @@
 #include "mod_plugins.h"
 #include "sio.h"
 #include "third_player.h"
+#include "mod_blocks.h"
 
 #define PLUGIN_P3            "bbt.third-character.p3"
 #define ADDR_PAD_POLL_FRAME  0x80065FC8u
@@ -70,9 +71,9 @@ uint32_t bbt_p3_record(void)
 
 static void p3_activate(void)
 {
-    if (!g_record)
-        g_record = psx_mod_alloc_guest_memory(P3_RECORD_SIZE, 16);
+    g_record = bbt_mod_block(BBT_BLOCK_P3_RECORD);   /* fixed address (BUGS #56) */
 }
+BBT_BLOCK_SIZE_IS(p3_record, P3_RECORD_SIZE, BBT_BLOCK_P3_RECORD_BYTES);
 
 /* After the game polled its two ports, refresh the third record. */
 static int pad_poll_frame_wrap(CPUState* cpu)

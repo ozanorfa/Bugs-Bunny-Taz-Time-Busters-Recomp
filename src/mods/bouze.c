@@ -20,16 +20,18 @@ int bouze_parse_header(const uint8_t* file, size_t file_len, BouzeHeader* h)
     h->count = bouze_u32(file + 8);
     if (h->count == 0 || h->count > BOUZE_MAX_CHUNKS)
         return 0;
-    uint32_t at = BOUZE_SECTOR;
+    /* 64-bit sums: a corrupted header must not wrap past 4 GiB back into
+     * the file (BUGS #58) */
+    uint64_t at = BOUZE_SECTOR;
     for (uint32_t i = 0; i < h->count; ++i) {
         const uint8_t* e = file + 0x0C + 12u * i;
         h->type[i] = bouze_u32(e + 0);
         h->size[i] = bouze_u32(e + 4);
         h->aligned[i] = bouze_u32(e + 8);
-        h->file_off[i] = at;
-        at += h->aligned[i];
-        if (h->file_off[i] + h->size[i] > file_len)
+        if (at + h->size[i] > file_len)
             return 0;
+        h->file_off[i] = (uint32_t)at;
+        at += h->aligned[i];
     }
     return 1;
 }
@@ -82,25 +84,31 @@ uint8_t* bouze_decompress(const uint8_t* src, size_t src_len, size_t* out_len)
                 break;
             if (p >= src_len)
                 goto done;
-            if (len + 0x200 > cap) {
+            unsigned n = 1;                /* bytes this token writes */
+            unsigned v = 0;
+            if (!bit) {
+                if (p + 1 >= src_len)
+                    goto done;
+                v = ((unsigned)src[p] << 8) | src[p + 1];
+                n = (unsigned)table[v & len_mask] + 1u;
+            }
+            /* grow by what the token writes: one match can copy up to 886
+             * bytes (k = 0, shift 3), more than a fixed margin (BUGS #58) */
+            while (len + n > cap) {
                 size_t ncap = cap * 2;
-                uint8_t* n = (uint8_t*)realloc(out, ncap);
-                if (!n) {
+                uint8_t* grown = (uint8_t*)realloc(out, ncap);
+                if (!grown) {
                     free(out);
                     return NULL;
                 }
-                out = n;
+                out = grown;
                 cap = ncap;
             }
             if (bit) {
                 out[len++] = src[p++];
             } else {
-                if (p + 1 >= src_len)
-                    goto done;
-                const unsigned v = ((unsigned)src[p] << 8) | src[p + 1];
                 p += 2;
                 const size_t dist = v >> dist_shift;
-                const unsigned n = (unsigned)table[v & len_mask] + 1u;
                 if (dist == 0 || dist > len) {
                     free(out);
                     return NULL;

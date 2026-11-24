@@ -175,6 +175,7 @@
 #include "mod_plugins.h"
 #include "psx_netplay.h"
 #include "actor_update_hub.h"
+#include "mod_blocks.h"
 
 #define PLUGIN              "bbt.own-view.two-views"
 #define ADDR_FRAME          0x80011AF0u   /* FUN_80011AF0: one game frame, all views */
@@ -338,13 +339,14 @@ static void two_views_activate(void)
     g_offline_split = psx_mod_option_value("bbt.own-view", "two-views", "offline", v, sizeof v) &&
                       strcmp(v, "split") == 0;
     bbt_actor_update_hook(BBT_ACTOR_HOOK_VIEW, &kViewHook);
-    if (!g_view_lists)
-        g_view_lists = psx_mod_alloc_guest_memory((MAX_VIEWS - 1u) * LIST_BYTES, 16);
-    if (!g_view_cameras)
-        g_view_cameras = psx_mod_alloc_guest_memory((MAX_VIEWS - 1u) * CAMERA_BANK_BYTES, 16);
-    if (!g_view2_arena)
-        g_view2_arena = psx_mod_alloc_gpu_dma_memory(3u * VIEW2_ARENA_BYTES, 16);
+    /* fixed addresses whatever was played before (BUGS #56, mod_blocks.h) */
+    g_view_lists = bbt_mod_block(BBT_BLOCK_VIEW_LISTS);
+    g_view_cameras = bbt_mod_block(BBT_BLOCK_VIEW_CAMERAS);
+    g_view2_arena = bbt_mod_block(BBT_BLOCK_VIEW2_ARENA);
 }
+BBT_BLOCK_SIZE_IS(view_lists, (MAX_VIEWS - 1u) * LIST_BYTES, BBT_BLOCK_VIEW_LISTS_BYTES);
+BBT_BLOCK_SIZE_IS(view_cameras, (MAX_VIEWS - 1u) * CAMERA_BANK_BYTES, BBT_BLOCK_VIEW_CAMERAS_BYTES);
+BBT_BLOCK_SIZE_IS(view2_arena, 3u * VIEW2_ARENA_BYTES, BBT_BLOCK_VIEW2_ARENA_BYTES);
 
 /* Copy the live camera globals to a bank (guest address), or back. */
 static void camera_globals_save(uint32_t bank)
@@ -1012,6 +1014,7 @@ static const BbtActorUpdateHook kViewHook = {view_pre, view_post};
 static void two_views_session_reset(void)
 {
     bbt_actor_update_hook(BBT_ACTOR_HOOK_VIEW, NULL);
+    bbt_mod_blocks_session_reset();
 }
 
 /* lui v0,0x8008 / lw v0,0x31FC(v0) / lui v1,0x8008 / lw v1,0x3200(v1) */

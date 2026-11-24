@@ -39,6 +39,16 @@ room refuses a guest whose packages are another version. A version marked
 - The launcher no longer labels Own View and Third Character "in development".
 
 ### Fixed
+- **Changing Mods in a LAN room should no longer split the next match.**
+  The mods' memory now sits at the same place on every PC whatever was
+  played before, it is cleared before every match, and switching between
+  Daffy and the Transylvania enemy in the room builds the other character's
+  moves. Not yet tried in a real room, so the guides still ask everyone to
+  restart the game after the host changes Mods.
+- Checks against a damaged disc file: the game's file reader no longer
+  writes past its buffer on an unusually long copy, and animation data that
+  is too short or names a bone out of range is refused. The checked disc
+  never had any of these; the game plays the same.
 - **The Turkish flag stays at a distance.** The game draws far-away walls
   with a half-size copy of their texture. That copy now has a half-size flag,
   so the flag of a farther window no longer vanishes and pops back. The

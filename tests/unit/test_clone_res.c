@@ -117,6 +117,20 @@ static void build_rejects(void)
     CHECK_EQ(clone_build_resources(in, 0, &d, &lay, NULL, 0, NULL, 0, NULL, 0, nodes, entries, records, &st), -1);
     CHECK_EQ(clone_build_resources(in, CLONE_RES_MAX + 1, &d, &lay, NULL, 0, NULL, 0, NULL, 0, nodes,
                                    entries, records, &st), -1);
+    /* BUGS #58: an animation blob too short for the header byte [12] that
+     * the record copies (a corrupted file; the disc's are 16 bytes or more) */
+    {
+        CloneResIn anim[1];
+        entry(&anim[0], 160, RES_TYPE_ANIM, 0x0001, 0x80102000u, 0x80125000u, 1, 0);
+        const uint16_t defaults[1] = {0x0001};
+        CHECK(clone_build_resources(anim, 1, &d, &lay, NULL, 0, defaults, 1, NULL, 0, nodes, entries,
+                                    records, &st) >= 0);
+        Donor short_anims = d;
+        for (int k = 0; k < short_anims.anim_count; ++k)
+            short_anims.anims[k].size = 12;
+        CHECK_EQ(clone_build_resources(anim, 1, &short_anims, &lay, NULL, 0, defaults, 1, NULL, 0, nodes,
+                                       entries, records, &st), -1);
+    }
     Donor no_anims = d;
     no_anims.anim_count = 0;
     CHECK_EQ(clone_build_resources(in, 1, &no_anims, &lay, NULL, 0, NULL, 0, NULL, 0, nodes, entries,

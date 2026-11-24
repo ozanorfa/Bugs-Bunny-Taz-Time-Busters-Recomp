@@ -1,6 +1,6 @@
 /*
  * Hermetic unit tests of the third-character mod's host-side logic
- * (src/mods/bouze.c, donor.c, donor_tex.c, clone_res.c) on synthetic data built in the
+ * (src/mods/bouze.c, donor.c, donor_tex.c, clone_res.c, retarget.c, mod_blocks.c) on synthetic data built in the
  * tests. Nothing here reads the disc.
  *
  *   bbt_unit_tests                 run every test
@@ -33,6 +33,7 @@ static const Suite kSuites[] = {
     {"donor_tex", kDonorTexTests, &kDonorTexTestCount},
     {"clone_res", kCloneResTests, &kCloneResTestCount},
     {"retarget", kRetargetTests, &kRetargetTestCount},
+    {"mod_blocks", kModBlocksTests, &kModBlocksTestCount},
 };
 
 static int run(const char* filter)

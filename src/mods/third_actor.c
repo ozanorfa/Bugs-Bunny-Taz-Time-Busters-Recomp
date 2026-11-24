@@ -99,6 +99,7 @@
 #include "sio.h"
 #include "third_player.h"
 #include "trca01_profile.h"
+#include "mod_blocks.h"
 
 #define PLUGIN_ACTOR "bbt.third-character.p3-actor"
 
@@ -222,6 +223,9 @@ static int g_default_count;
 /* Which character the clone is drawn as (option "character", read at
  * activation): 0 the TRCA01 enemy, 1 Daffy (daffy_profile.h). */
 static int g_daffy_char;
+/* The g_daffy_char that prepare()'s results are for, -1 before the first
+ * activation (BUGS #55: the option can change between sessions). */
+static int g_prepared_for = -1;
 #define RT (g_daffy_char ? bbt_daffy_runtime() : bbt_donor_runtime())
 /* Daffy's attack moves were built from Bugs' attack (daffy_moves.c): his
  * body is drawn during the spin (draw_pass_wrap). */
@@ -398,16 +402,42 @@ static void read_options(void)
     g_scale = (int16_t)(0x1000 * pct / 100);
 }
 
+/* Drop what prepare() built (BUGS #55), so the next prepare() builds the
+ * image, animation map, texture plan and attack flag of the character the
+ * option names now. Activation only: no clone is in a level then. */
+static void unprepare(void)
+{
+    free(g_image);
+    g_image = NULL;
+    g_image_size = 0;
+    donor_free(&g_donor);
+    memset(&g_layout, 0, sizeof g_layout);
+    memset(&g_plan, 0, sizeof g_plan);
+    g_tex_planned = 0;
+    g_map_count = 0;
+    g_default_count = 0;
+    g_daffy_attack = 0;
+    g_prepared = 0;
+}
+
 static const BbtActorUpdateHook kInputHook;
 static void activate(void)
 {
     g_active = 1;
     bbt_actor_update_hook(BBT_ACTOR_HOOK_INPUT, &kInputHook);
     read_options();
-    if (!g_block)
-        g_block = psx_mod_alloc_guest_memory(BLK_SIZE, 16);
+    /* fixed address whatever was played before (BUGS #56, mod_blocks.h) */
+    g_block = bbt_mod_block(BBT_BLOCK_P3_ACTOR);
+    if (g_prepared_for != g_daffy_char) {
+        if (g_prepared_for >= 0) {
+            unprepare();
+            count("character_changed", 1);
+        }
+        g_prepared_for = g_daffy_char;
+    }
     prepare();
 }
+BBT_BLOCK_SIZE_IS(p3_actor, BLK_SIZE, BBT_BLOCK_P3_ACTOR_BYTES);
 
 /* Is actor `a` in the placed-actor list? (The clone is a pool slot like
  * any other actor; the walk follows main RAM pointers only.) */
@@ -1185,6 +1215,7 @@ static void session_reset(void)
 {
     g_active = 0;
     bbt_actor_update_hook(BBT_ACTOR_HOOK_INPUT, NULL);
+    bbt_mod_blocks_session_reset();
 }
 
 /* Debug command (debug-server thread): host state that is immutable once

@@ -38,6 +38,7 @@ add_library(bbt_mod_logic STATIC
     ${BBT_MODS_DIR}/donor_tex.c
     ${BBT_MODS_DIR}/clone_res.c
     ${BBT_MODS_DIR}/retarget.c
+    ${BBT_MODS_DIR}/mod_blocks.c
 )
 target_include_directories(bbt_mod_logic PUBLIC ${BBT_MODS_DIR})
 
@@ -49,6 +50,7 @@ add_executable(bbt_unit_tests
     unit/test_donor_tex.c
     unit/test_clone_res.c
     unit/test_retarget.c
+    unit/test_mod_blocks.c
 )
 target_link_libraries(bbt_unit_tests PRIVATE bbt_mod_logic)
 

@@ -47,6 +47,7 @@
 #include "func_override.h"
 #include "mod_plugins.h"
 #include "psx_netplay.h"
+#include "mod_blocks.h"
 
 #define PLUGIN "bbt.third-character.p3-hud"
 
@@ -244,13 +245,14 @@ static int hud_wrap(CPUState* cpu)
 static void activate(void)
 {
     g_active = 1;
-    if (!g_block)
-        g_block = psx_mod_alloc_guest_memory(BLK_SIZE, 16);
+    g_block = bbt_mod_block(BBT_BLOCK_P3_HUD);       /* fixed address (BUGS #56) */
 }
+BBT_BLOCK_SIZE_IS(p3_hud, BLK_SIZE, BBT_BLOCK_P3_HUD_BYTES);
 
 static void session_reset(void)
 {
     g_active = 0;
+    bbt_mod_blocks_session_reset();
 }
 
 static int p3hud_command(const char* args, char* reply, int cap)

@@ -88,6 +88,7 @@
 #include "load_image_hub.h"
 #include "mod_plugins.h"
 #include "trca01_profile.h"
+#include "mod_blocks.h"
 
 #define RT (bbt_donor_runtime())
 
@@ -279,12 +280,12 @@ static void trca01_read_size_option(void)
 
 static void load_image_hook(struct CPUState* cpu, uint32_t rect, uint32_t src);
 
+BBT_BLOCK_SIZE_IS(trca01_donor, DONOR_RESERVE, BBT_BLOCK_TRCA01_DONOR_BYTES);
 static void trca01_activate(void)
 {
     bbt_load_image_hook(BBT_LOAD_IMAGE_HOOK_TRCA01, load_image_hook);
     trca01_read_size_option();
-    if (!g_donor_guest)
-        g_donor_guest = psx_mod_alloc_guest_memory(DONOR_RESERVE, 16);
+    g_donor_guest = bbt_mod_block(BBT_BLOCK_TRCA01_DONOR);   /* fixed address (BUGS #56) */
     if (!g_occ_level)
         g_occ_level = (VramMap*)calloc(1, sizeof(VramMap));
     trca01_load_donor();
@@ -305,6 +306,7 @@ static void load_image_hook(struct CPUState* cpu, uint32_t rect, uint32_t src)
 static void trca01_session_reset(void)
 {
     bbt_load_image_hook(BBT_LOAD_IMAGE_HOOK_TRCA01, NULL);
+    bbt_mod_blocks_session_reset();
 }
 
 /* After a patched load outside the donor's level: put the donor's texels

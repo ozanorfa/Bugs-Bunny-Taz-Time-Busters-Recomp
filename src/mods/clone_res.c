@@ -52,6 +52,10 @@ int clone_build_resources(const CloneResIn* in, int n, const Donor* d,
             int mapped = 0;
             const DonorBlob* b = donor_pick_anim(d, sub, own_frames, map, map_count,
                                                  defaults, default_count, &mapped);
+            /* the record copies header byte [12] (BUGS #58: a corrupted file
+             * could carry a shorter blob; the disc's are 16 bytes or more) */
+            if (b->size < 13u)
+                return -1;
             const uint8_t* blob = d->image + b->off;
             uint8_t* r = records_out + ANIM_RECORD_SIZE * (uint32_t)records;
             int own_timing = 1;

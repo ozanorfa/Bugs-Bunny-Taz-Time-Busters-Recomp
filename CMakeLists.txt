@@ -99,7 +99,9 @@ target_sources(psx-runtime PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/daffy_moves.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/clone_res.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/donor_runtime.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/bouze.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/bouze.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/mod_blocks.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/mod_blocks_runtime.c")
 
 # Stage runtime configs next to the exe for direct build/ launches. Only copy
 # files that exist — never fail POST_BUILD when game_options.toml is absent.

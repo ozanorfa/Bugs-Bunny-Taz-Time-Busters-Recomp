@@ -73,6 +73,26 @@ static void decompress_long_length(void)
     free(out);
 }
 
+static void decompress_longest_match_grows_the_buffer(void)
+{
+    /* BUGS #58. Parameters 0x18: k = 0, growth shift 3, so code 0x7F copies
+     * 0x13 + ((0x7F - 0x13) << 3) + 3 = 886 bytes, more than the decoder's
+     * old 0x200 growth margin. 'Z' then 7 such matches (distance 1): the
+     * buffer starts at 4 * 20 + 1024 bytes and must grow before each copy. */
+    static const uint8_t kStream[] = {0x18, 0x00, 0x00, 0x07, 0x01, 'Z',
+                                      0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF,
+                                      0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF};
+    size_t len = 0;
+    uint8_t* out = bouze_decompress(kStream, sizeof kStream, &len);
+    REQUIRE(out != NULL);
+    CHECK_EQ(len, 1 + 7 * 886);
+    int all_z = 1;
+    for (size_t i = 0; i < len; ++i)
+        all_z &= out[i] == 'Z';
+    CHECK(all_z);
+    free(out);
+}
+
 static void decompress_rejects_bad_distance(void)
 {
     /* A match before any output (distance 1, nothing written yet). */
@@ -105,6 +125,24 @@ static void header_and_chunks(void)
     uint8_t* out = bouze_decompress(f.p + h.file_off[1], h.size[1], &len);
     CHECK(out && len == sizeof big && memcmp(out, big, len) == 0);
     free(out);
+
+    /* BUGS #58: chunk offsets that wrap past 4 GiB. aligned[0] = 0xFFFFF800
+     * puts chunk 1 at 0x800 + 0xFFFFF800 = 0 in 32 bits: the header itself. */
+    {
+        uint8_t keep[4];
+        memcpy(keep, f.p + 0x0C + 8, 4);
+        const uint8_t wrap[4] = {0x00, 0xF8, 0xFF, 0xFF};
+        memcpy(f.p + 0x0C + 8, wrap, 4);
+        CHECK(!bouze_parse_header(f.p, f.n, &h));
+        memcpy(f.p + 0x0C + 8, keep, 4);
+        /* a chunk size that wraps with its offset */
+        memcpy(keep, f.p + 0x0C + 12 + 4, 4);
+        const uint8_t huge[4] = {0x00, 0xF8, 0xFF, 0xFF};
+        memcpy(f.p + 0x0C + 12 + 4, huge, 4);
+        CHECK(!bouze_parse_header(f.p, f.n, &h));
+        memcpy(f.p + 0x0C + 12 + 4, keep, 4);
+        REQUIRE(bouze_parse_header(f.p, f.n, &h));
+    }
 
     /* Truncated file, too short a header, too many chunks. */
     CHECK(!bouze_parse_header(f.p, f.n - 0x800, &h));
@@ -198,6 +236,7 @@ const TestCase kBouzeTests[] = {
     {"decompress_stops_at_the_token_count", decompress_stops_at_the_token_count},
     {"decompress_match", decompress_match},
     {"decompress_long_length", decompress_long_length},
+    {"decompress_longest_match_grows_the_buffer", decompress_longest_match_grows_the_buffer},
     {"decompress_rejects_bad_distance", decompress_rejects_bad_distance},
     {"header_and_chunks", header_and_chunks},
     {"records_and_tags", records_and_tags},
