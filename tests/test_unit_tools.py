@@ -250,25 +250,24 @@ class GameRunHelpers(unittest.TestCase):
             self.assertEqual(t["controller"]["multitap_port"], 2)
 
     def test_state_toml(self):
-        text = game.state_toml({"trca01": True, "swap-test": False})
+        text = game.state_toml({"bbt.decor/turkish-flag": True, "p3": False})
         try:
             import tomllib
         except ModuleNotFoundError:
-            self.assertIn('id = "trca01"', text)
+            self.assertIn('id = "turkish-flag"', text)
             return
         t = tomllib.loads(text)
         self.assertEqual(t["format_version"], 2)
-        self.assertEqual(t["package"], [{"id": "bbt.third-character"}, {"id": "bbt.own-view"},
-                                        {"id": "bbt.quick-start"}])
+        self.assertEqual(t["package"], [{"id": "bbt.decor"}, {"id": "bbt.third-character"},
+                                        {"id": "bbt.own-view"}, {"id": "bbt.quick-start"}])
         # the features on by default are written as off unless named
         self.assertEqual({(f["package_id"], f["id"]): f["enabled"] for f in t["feature"]},
-                         {("bbt.third-character", "trca01"): True, ("bbt.third-character", "swap-test"): False,
-                          ("bbt.third-character", "p3"): False, ("bbt.own-view", "two-views"): False,
-                          ("bbt.quick-start", "quick-start"): False})
+                         {("bbt.decor", "turkish-flag"): True, ("bbt.third-character", "p3"): False,
+                          ("bbt.own-view", "two-views"): False, ("bbt.quick-start", "quick-start"): False})
         self.assertEqual(tomllib.loads(game.state_toml({"_defaults": True})), {"format_version": 2})
         # other packages and option values, as the runtime writes them
         t = tomllib.loads(game.state_toml({
-            "trca01": True,
+            "p3": False,
             "bbt.quick-start/quick-start": {"enabled": True, "values": {"skip_intro": "false"}}}))
         self.assertEqual(t["package"], [{"id": "bbt.third-character"}, {"id": "bbt.quick-start"},
                                         {"id": "bbt.own-view"}])
@@ -410,12 +409,12 @@ class NetHelpers(unittest.TestCase):
             (build / "mods" / "state.toml").write_text("the player's selection\n")
             exe = build / "Game"
             exe.write_bytes(b"exe")
-            link = net._peer_folder(build, exe, Path(d) / "peer0", {"trca01": True})
+            link = net._peer_folder(build, exe, Path(d) / "peer0", {"bbt.decor/turkish-flag": True})
             self.assertEqual(link.read_bytes(), b"exe")
             self.assertEqual(link.parent, Path(d) / "peer0")
             self.assertTrue((link.parent / "bios" / "openbios.bin").is_file())
             self.assertTrue((link.parent / "mods" / "bundled" / "pkg" / "manifest.toml").is_file())
-            self.assertIn('id = "trca01"', (link.parent / "mods" / "state.toml").read_text())
+            self.assertIn('id = "turkish-flag"', (link.parent / "mods" / "state.toml").read_text())
             self.assertEqual((build / "mods" / "state.toml").read_text(), "the player's selection\n")
 
 

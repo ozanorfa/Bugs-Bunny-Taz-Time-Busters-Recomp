@@ -7,15 +7,17 @@ mods each peer selected and the peers compare their plans before the game
 starts (runtime main.cpp netplay_commit_mods, NOTES.md "LAN netplay with
 our mods"):
 
-- both peers on "Taz becomes the Transylvania enemy": the match plays into
-  Granwich with the mod active on both, and the peers' machine digests
-  agree on every tick both logged;
+- both peers on the Turkish flag (bbt.decor: both wall textures and the
+  6-pane window rewritten once on each peer): the match plays into Granwich
+  with the mod active on both, and the peers' machine digests agree on
+  every tick both logged;
 - one peer with the mod and one without: the match never starts (both wait
   at tick 0 with "LAN content differs between peers");
-- both peers also on Quick start (defaults: no logos, no intro, short
-  loading screens, 2x CD speed) and the Turkish flag (bbt.decor: both
-  wall textures and the 6-pane window rewritten once on each peer): they
-  act on both peers alike and the digests still agree.
+- both peers on Quick start (defaults: no logos, no intro, short loading
+  screens, 2x CD speed) and the flag: they act on both peers alike and the
+  digests still agree.
+(Until 2026-11-26 the first two used "Taz becomes the Transylvania enemy",
+and the three-peer ones the enemy as the third character; both removed.)
 - both peers on Quick start and "Two views" (bbt.own-view), each in a
   hidden OpenGL window: in Granwich every peer draws its own player's view
   full screen (psx_mod_render_local_view: the host Bugs' view 0, the guest
@@ -25,10 +27,11 @@ our mods"):
   variables (PSX_GL_MAX_DIM, PSX_GL_HIRES_WINDOW=0): these peers otherwise
   start at 8x, where each own-view draw costs ~80 ms (BUGS.md #35).
 - three peers (host as relay, PSX_NET_SLOTS=3) with the third character
-  ("p3") and Quick start, a 3-player copy of game.toml (multitap on port
-  2): the third actor spawns once on every peer, peer 2's own pad is seat
-  2 (the plugin's input record shows its Right on every peer) and moves the
-  third actor the same way on every peer, the digests agree.
+  (Daffy, "p3") and Quick start, a 3-player copy of game.toml (multitap on
+  port 2): the third actor spawns once on every peer, every peer built the
+  same Daffy image from its disc, peer 2's own pad is seat 2 (the plugin's
+  input record shows its Right on every peer) and moves the third actor the
+  same way on every peer, the digests agree.
 - three peers on the third character, Quick start and "Two views", in
   hidden OpenGL windows: the view count becomes 3 on every peer and each
   peer draws its own seat's view full screen (local_view_0 / 1 / 2), no
@@ -62,15 +65,11 @@ from bbt.game import LEVEL_GRANNY, TYPE_TAZ, Player, three_player_toml  # noqa: 
 from bbt.net import CONTENT_DIFFERS, NetMatch  # noqa: E402
 from bbt.png import dark_rows, row_jumps, row_means  # noqa: E402
 
-T = "bbt.third-character.trca01."
 Q = "bbt.quick-start."
-TRCA01 = {"trca01": True}
-QUICK = {"trca01": True, "bbt.quick-start/quick-start": True}
-QUICK_FLAG = {**QUICK, "bbt.decor/turkish-flag": True}
+FLAG = {"bbt.decor/turkish-flag": True}
+QUICK_FLAG = {"bbt.quick-start/quick-start": True, **FLAG}
 DECOR = ("flag_texels", "flag_clut", "flag_far_texels", "flag_far_clut", "panes_texels")
 V = "bbt.own-view.two-views."
-# The enemy, not the default Daffy: these tests check what was verified with it.
-ENEMY = {"enabled": True, "values": {"character": "enemy"}}
 A3 = "bbt.third-character.p3-actor."
 OWN = {"bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True}
 SMALL_GL = {"PSX_GL_MAX_DIM": "2048", "PSX_GL_HIRES_WINDOW": "0", "SDL_AUDIODRIVER": "dummy"}
@@ -96,7 +95,7 @@ def need_build() -> Path:
 class NetplayWithMods(unittest.TestCase):
     def test_1_same_mods_play_in_step(self):
         build = need_build()
-        with NetMatch(build, "net-same-mods", [TRCA01, TRCA01]) as m:
+        with NetMatch(build, "net-same-mods", [FLAG, FLAG]) as m:
             host, guest = m.peers
             p = Player(_Run(host.client))
             self.assertTrue(p.boot_to_language_select() and p.language_to_title()
@@ -123,12 +122,8 @@ class NetplayWithMods(unittest.TestCase):
                 taz = pl.actor(2)
                 self.assertTrue(taz and pl.actor_type(taz) == TYPE_TAZ, f"peer {peer.slot}: no Taz")
                 cs = peer.client.counters()
-                for k in ("loads_patched", "models_patched", "tex_relocated"):
-                    self.assertGreaterEqual(cs.get(T + k, 0), 1, f"peer {peer.slot}: {k} (mod not active)")
-            # the same model on both: Taz's resource list (stable in the level)
-            lists = [Player(_Run(peer.client)).c.u32(Player(_Run(peer.client)).actor(2) + 0x98)
-                     for peer in m.peers]
-            self.assertEqual(lists[0], lists[1], "Taz's resources differ between the peers")
+                flag = {k: cs.get("bbt.decor." + k) for k in DECOR}
+                self.assertEqual(set(flag.values()), {1}, f"peer {peer.slot}: {flag} (mod not active)")
 
         compared, bad = m.compare_digests()
         last = max(set(host.digests()) & set(guest.digests()), default=0)
@@ -139,7 +134,7 @@ class NetplayWithMods(unittest.TestCase):
 
     def test_2_different_mods_do_not_start(self):
         build = need_build()
-        with NetMatch(build, "net-other-mods", [TRCA01, {}]) as m:
+        with NetMatch(build, "net-other-mods", [FLAG, {}]) as m:
             deadline = time.monotonic() + 30
             seen = set()
             while time.monotonic() < deadline and len(seen) < 2:
@@ -245,10 +240,7 @@ class NetplayWithMods(unittest.TestCase):
         self.assertEqual(bad, [], "the peers' machine digests differ")
         self.assertGreater(last, loaded_at + 100, "no digests after the level load")
 
-    def test_5_three_peers_with_the_third_character(self):
-        self.three_peers("net-three-peers", {"p3": ENEMY, "bbt.quick-start/quick-start": True})
-
-    def test_5b_three_peers_with_daffy(self):
+    def test_5_three_peers_with_daffy(self):
         """Daffy's moves are built on each peer from the disc (integer math,
         retarget.c): the same image everywhere, and the digests agree."""
         def same_daffy(m):
@@ -263,7 +255,7 @@ class NetplayWithMods(unittest.TestCase):
             self.assertEqual(len(set(images)), 1, f"the peers built different Daffy images {images}")
         # "auto" (the default): he appears because the third seat is taken
         self.three_peers("net-three-daffy",
-                         {"p3": {"enabled": True, "values": {"character": "daffy", "appear": "auto"}},
+                         {"p3": {"enabled": True, "values": {"appear": "auto"}},
                           "bbt.quick-start/quick-start": True}, same_daffy)
 
     def three_peers(self, name: str, three: dict, check=None):
@@ -331,7 +323,7 @@ class NetplayWithMods(unittest.TestCase):
 
     def test_6_three_peers_each_see_their_own_view(self):
         build = need_build()
-        feats = {"p3": ENEMY, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True}
+        feats = {"p3": True, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True}
         toml = three_player_toml(config.game_toml(), config.out_dir() / "game_3p_net_own.toml")
         with NetMatch(build, "net-three-own-views", [feats] * 3, toml=toml, window=True,
                       env=SMALL_GL) as m:

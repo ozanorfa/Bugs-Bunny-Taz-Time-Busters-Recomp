@@ -12,9 +12,10 @@ the host presses PLAY.
 The launcher layout is fixed with size:1100x750 (logical pixels), so the
 click positions below are that layout's (found from its screenshots).
 
-The host selected "Taz becomes the Transylvania enemy" and Quick start; the
-guest selected nothing. With [netplay] content_negotiation the room sends
-the host's plan: the match runs in rollback mode with both mods active on
+The host selected the Turkish flag (bbt.decor) and Quick start; the guest
+selected nothing (until 2026-11-26 the host's mod was "Taz becomes the
+Transylvania enemy", since removed). With [netplay] content_negotiation the
+room sends the host's plan: the match runs in rollback mode with both mods active on
 both peers, the host plays into Granwich, the machine digests agree, and the
 guest's own selection (mods/state.toml) is left as it was. The launchers
 get a copy of game.toml (the launcher writes its multitap-analog choice
@@ -38,9 +39,9 @@ from bbt.client import DebugClient, pad  # noqa: E402
 from bbt.game import LEVEL_GRANNY, Player, game_toml_copy, three_player_toml  # noqa: E402
 from bbt.net import _peer_folder, digests, free_tcp_port  # noqa: E402
 
-HOST_MODS = {"trca01": True, "bbt.quick-start/quick-start": True}
+HOST_MODS = {"bbt.decor/turkish-flag": True, "bbt.quick-start/quick-start": True}
 GUEST_MODS: dict = {}
-T = "bbt.third-character.trca01."
+DECOR = ("flag_texels", "flag_clut", "flag_far_texels", "flag_far_clut", "panes_texels")
 A3 = "bbt.third-character.p3-actor."
 V = "bbt.own-view.two-views."
 # Phase 6: three PCs, each its own player and full-screen view (the third
@@ -193,7 +194,8 @@ class LanRoom(unittest.TestCase):
         for i, (_, cc, _) in enumerate(self.procs):
             cs = cc.counters()
             with self.subTest(peer=i):
-                self.assertEqual(cs.get(T + "models_patched"), 1, "Taz is not the enemy")
+                flag = {k: cs.get("bbt.decor." + k) for k in DECOR}
+                self.assertEqual(set(flag.values()), {1}, f"the flag is not active: {flag}")
                 self.assertEqual(cs.get(Q + "intro_skipped"), 1, "Quick start not active")
         self.tearDown()
         self.procs = []

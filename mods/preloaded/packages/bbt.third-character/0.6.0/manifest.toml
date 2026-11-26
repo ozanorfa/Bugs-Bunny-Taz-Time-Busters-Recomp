@@ -1,6 +1,6 @@
 # Third character: Daffy Duck as the third player.
 # Selects the trusted plugin compiled into this game from
-# src/mods/third_character.c and src/mods/third_player.c. This package
+# src/mods/third_player.c, third_actor.c and third_hud.c. This package
 # contains no game data.
 format_version = 11
 id = "bbt.third-character"
@@ -11,61 +11,16 @@ version = "0.6.0"
 # different builds cannot start a match (docs/WINDOWS_AND_LAN.md, section 8).
 name = "Third Character"
 author = "BugsBunnyTazRecomp project"
-description = "Daffy Duck as a third player next to Bugs and Taz in 2-player mode, plus the older tests that turn Taz into another in-game character."
+description = "Daffy Duck as a third player next to Bugs and Taz in 2-player mode."
 resolver = "declarative"
 
 [[target]]
 game_id = "SLUS-01144"
 
 [[feature]]
-id = "swap-test"
-name = "Swap test: Taz uses Bugs' model"
-description = "Developer test (milestone M1). In 2-player mode, Taz is drawn with Bugs' model and animations after each level load. Taz's controls and behaviour are unchanged. Do not combine with the TRCA01 feature."
-group = "Third character"
-default_enabled = false
-
-[[plugin]]
-feature = "swap-test"
-id = "bbt.third-character.swap-test"
-
-[[feature]]
-id = "trca01"
-name = "Taz becomes the Transylvania enemy"
-description = "In development. In 2-player mode, Taz is drawn with the model, animations and textures of the hunched enemy from the Transylvania level, read from your own disc (LEVEL5/TRCA01.BZZ) when the game starts. Taz's controls and behaviour are unchanged. Standing, running, jumping, falling, landing and the spin (with its tornado) use matching enemy animations; a few other moves show a standing pose. Do not combine with the swap test."
-group = "Third character"
-default_enabled = false
-
-[[plugin]]
-feature = "trca01"
-id = "bbt.third-character.trca01"
-
-[[option]]
-feature = "trca01"
-id = "size"
-label = "Size"
-type = "choice"
-default = "75"
-
-[[option.choice]]
-value = "100"
-label = "100% (the enemy's own size)"
-
-[[option.choice]]
-value = "85"
-label = "85%"
-
-[[option.choice]]
-value = "75"
-label = "75% (about Bugs' height)"
-
-[[option.choice]]
-value = "65"
-label = "65%"
-
-[[feature]]
 id = "p3"
 name = "Third player: Daffy Duck"
-description = "In 2-player mode, every level with Taz gets a third hero next to him, played from seat 3: a third controller, or the third PC in a LAN room. Character: Daffy Duck (the default; his model is read from your own disc, LEVEL1/RETRY.BZZ, and Bugs' animations are fitted to his skeleton when the game starts) or the hunched enemy from the Transylvania level (LEVEL5/TRCA01.BZZ). He has his own health panel, and enemies go for him too. His textures are at half vertical resolution. Needs the 3-player configuration (5 controller seats, multitap on port 2). He appears only when there is a third player: in a LAN room when three are seated; on one PC once Player 3 (a controller set in Settings -> Input) presses any button (he comes at once, next to Taz). Do not combine with \"Taz becomes the Transylvania enemy\" or the swap test."
+description = "In 2-player mode, every level with Taz gets a third hero next to him, played from seat 3: a third controller, or the third PC in a LAN room. His model is read from your own disc (LEVEL1/RETRY.BZZ), and Bugs' animations are fitted to his skeleton when the game starts. He has his own health panel, and enemies go for him too. Needs the 3-player configuration (5 controller seats, multitap on port 2). He appears only when there is a third player: in a LAN room when three are seated; on one PC once Player 3 (a controller set in Settings -> Input) presses any button (he comes at once, next to Taz)."
 group = "Third character"
 default_enabled = true
 
@@ -80,44 +35,6 @@ id = "bbt.third-character.p3-actor"
 [[plugin]]
 feature = "p3"
 id = "bbt.third-character.p3-hud"
-
-[[option]]
-feature = "p3"
-id = "size"
-label = "Size (the enemy; Daffy keeps his own)"
-type = "choice"
-default = "75"
-
-[[option.choice]]
-value = "100"
-label = "100% (the enemy's own size)"
-
-[[option.choice]]
-value = "85"
-label = "85%"
-
-[[option.choice]]
-value = "75"
-label = "75% (about Bugs' height)"
-
-[[option.choice]]
-value = "65"
-label = "65%"
-
-[[option]]
-feature = "p3"
-id = "character"
-label = "Character"
-type = "choice"
-default = "daffy"
-
-[[option.choice]]
-value = "enemy"
-label = "The Transylvania enemy"
-
-[[option.choice]]
-value = "daffy"
-label = "Daffy Duck (moves fitted from Bugs' animations)"
 
 [[option]]
 feature = "p3"
@@ -174,10 +91,3 @@ label = "Always (tests: seat 3 driven by the debug command)"
 feature = "p3"
 package = "bbt.shared"
 requires_feature = "actor-update"
-
-# The Transylvania test's upload map uses the shared texture-upload hook
-# (src/mods/load_image_hub.h), which the Turkish flag also uses.
-[[requirement]]
-feature = "trca01"
-package = "bbt.shared"
-requires_feature = "load-image"

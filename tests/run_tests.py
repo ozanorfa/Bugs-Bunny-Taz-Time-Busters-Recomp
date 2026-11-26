@@ -3,7 +3,7 @@
 
   python3 tests/run_tests.py                 every tier (what cannot run is skipped)
   python3 tests/run_tests.py unit disc       hermetic + disc tiers (about 15 s)
-  python3 tests/run_tests.py game -k trca01  only matching game tests
+  python3 tests/run_tests.py game -k daffy   only matching game tests
 
 Tiers:
   c-unit       hermetic C tests of the mod's host-side logic (bbt_unit_tests)
@@ -34,7 +34,7 @@ HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 TIERS = ("c-unit", "python-unit", "disc", "game")
 MODULE_PREFIX = {"python-unit": "test_unit_", "disc": "test_disc_", "game": "test_game_"}
-GAME_ORDER = ("test_game_stock", "test_game_quickstart", "test_game_decor", "test_game_ownview", "test_game_ownview3", "test_game_trca01",
+GAME_ORDER = ("test_game_stock", "test_game_quickstart", "test_game_decor", "test_game_ownview", "test_game_ownview3",
               "test_game_p3", "test_game_net", "test_game_lanroom")
 
 

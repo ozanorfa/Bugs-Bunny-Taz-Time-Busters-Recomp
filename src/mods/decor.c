@@ -33,8 +33,8 @@
  * the shared simulation from the same disc (no host state, nothing kept
  * between calls). Nothing from the disc is stored here: only hashes.
  *
- * The hook is shared with the Transylvania-enemy test feature through
- * bbt.shared/load-image, so both can be on.
+ * The hook goes through bbt.shared/load-image (load_image_hub.h), so another
+ * feature can watch uploads too.
  */
 #include <stddef.h>
 #include <stdint.h>

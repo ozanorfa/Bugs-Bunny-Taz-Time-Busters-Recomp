@@ -1,9 +1,9 @@
 /*
- * Shared donor loader — see donor_runtime.h. Moved out of
- * third_character.c (Phase 3, M2-M4) so the Phase 4 third actor uses the
- * same extraction: donor.c reads the model and animations of the TRCA01
- * enemy, donor_add_spin appends the synthetic spin, donor_tex.c rebuilds
- * its texels and CLUTs from the level's TIM list.
+ * Donor loader — see donor_runtime.h. donor.c reads Daffy's model and
+ * animations from his level file, donor_add_spin appends the synthetic
+ * spin, donor_tex.c rebuilds his texels and CLUTs from the level's TIM
+ * list. (Written for the Transylvania enemy in Phase 3; that donor was
+ * removed on 2026-11-26.)
  */
 #include "donor_runtime.h"
 
@@ -12,15 +12,9 @@
 
 #include "mod_plugins.h"
 #include "daffy_profile.h"
-#include "trca01_profile.h"
+#include "p3_profile.h"
 
-static BbtDonorRuntime g_rt;
 static BbtDonorRuntime g_daffy;
-
-const BbtDonorRuntime* bbt_donor_runtime(void)
-{
-    return &g_rt;
-}
 
 const BbtDonorRuntime* bbt_daffy_runtime(void)
 {
@@ -62,11 +56,6 @@ static int load(BbtDonorRuntime* rt, const char* name, uint32_t actor_type,
     }
     free(file);
     return rt->state;
-}
-
-int bbt_donor_runtime_load(void)
-{
-    return load(&g_rt, DONOR_FILE, DONOR_ACTOR_TYPE, NULL, 0, TAZ_MODEL_SUB);
 }
 
 int bbt_daffy_runtime_load(void)

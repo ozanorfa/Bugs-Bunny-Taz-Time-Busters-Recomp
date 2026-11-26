@@ -107,7 +107,6 @@ the host's Mods count for every PC.
   if Taz is out), with full health and no life lost. A package that brings a
   player back brings him back too.
 - **Options** (Mods -> Third player: Daffy Duck):
-  - **Character:** Daffy Duck, or the hunched enemy from the Transylvania level.
   - **Daffy's sounds:** Bugs' steps, jumps and attack; Taz's; or none of Taz's.
   - **When Daffy is out:** after 5 seconds; or the game's rule for Bugs and Taz,
     which is when the team comes back (a life lost) or a package.

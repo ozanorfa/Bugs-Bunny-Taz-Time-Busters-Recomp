@@ -23,7 +23,9 @@ the third actor brings in its own HUD panel (sprites 15 / 16), at the top
 centre of each 72-line band, with the health it has left (NOTES.md "The
 third player's HUD panel"). The two plugins that need Actor_Update share one override
 (bbt.shared/actor-update, activated implicitly). Screenshots go to
-build-tests/out/ownview3/."""
+build-tests/out/ownview3/. The third player is Daffy (until 2026-11-26 these
+ran with the Transylvania enemy as the third character; that choice was
+removed: the enemy is only the game's own enemy now)."""
 from __future__ import annotations
 
 import math
@@ -39,8 +41,6 @@ from bbt.game import LEVEL_GRANNY, LEVEL_TRCA01, three_player_toml  # noqa: E402
 from test_game_stock import moved, start_run  # noqa: E402
 
 V = "bbt.own-view.two-views."
-# The enemy, not the default Daffy: these tests check what was verified with it.
-ENEMY = {"enabled": True, "values": {"character": "enemy"}}
 A3 = "bbt.third-character.p3-actor."
 VIEW_COUNT, FOLLOWED = 0x8008DE00, 0x80093C58
 CAM_RECORD, CAM_RECORD_BYTES = 0x800964C4, 0x2C0
@@ -52,7 +52,7 @@ SOUND_SLOTS, SOUND_SLOT_BYTES, SOUND_SLOT_COUNT = 0x80093274, 0x1C, 24
 SOUND_MASTER, SOUND_RANGE = 0x8008DBD4, 0x1000
 HERO_DOWN, LIVES = 0x800100A2, 0x800100A0  # 0x10 / 0x20 Bugs / Taz died, 1 / 2 out; lives
 DEATH, CLIP_PASVISIBLE, FULL_HEALTH = 0x2000000, 0x20, 6
-TRCA01_ENEMY_MODEL = 635
+TRCA01_ENEMY_MODEL = 635      # the game's own Transylvania enemy (the third player is Daffy)
 
 
 def camera(c, view: int):
@@ -214,7 +214,7 @@ class ThreeViews(unittest.TestCase):
         toml = config.out_dir() / "game_3p_ownview3.toml"
         three_player_toml(config.game_toml(), toml)
         start_run(cls, config.p3_build(), "ownview3",
-                  {"p3": ENEMY, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True},
+                  {"p3": True, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True},
                   toml=toml)
 
     def need(self, stage: str) -> None:
@@ -404,7 +404,7 @@ class EnemiesSeeTheThirdPlayer(unittest.TestCase):
         toml = config.out_dir() / "game_3p_ownview3_enemy.toml"
         three_player_toml(config.game_toml(), toml)
         start_run(cls, config.p3_build(), "ownview3_enemy",
-                  {"p3": ENEMY, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True},
+                  {"p3": True, "bbt.quick-start/quick-start": True, "bbt.own-view/two-views": True},
                   toml=toml)
 
     def clone(self) -> int:
