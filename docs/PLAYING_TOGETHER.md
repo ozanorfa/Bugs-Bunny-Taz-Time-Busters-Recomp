@@ -1,5 +1,10 @@
 # Playing together
 
+This guide is for *Bugs Bunny & Taz: Time Busters Recompiled*, a fan port
+of the 2000 PlayStation game to Windows and macOS with Daffy Duck added as a
+third player. What the original game is and what this project adds: the
+[README](../README.md).
+
 Up to three players, each on their own PC, over a LAN or Radmin VPN: Bugs
 (seat 1), Taz (seat 2) and Daffy Duck (seat 3). Every PC shows its own
 player full screen with its own camera.

@@ -26,8 +26,8 @@ room refuses a guest whose packages are another version. A version marked
   note into one ZIP under `reports\`, then opens that folder. It keeps the
   newest 20.
 - **A public repository** with an MIT license (see `NOTICE.md` for the parts
-  that keep other terms), a README covering each mod with pictures, and this
-  changelog.
+  that keep other terms), this changelog, and a README covering the original
+  PlayStation game, what this project is and each mod with pictures.
 
 ### Changed
 - **Matches tolerate short silences.** A match ends on every PC when one PC

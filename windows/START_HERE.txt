@@ -1,9 +1,10 @@
 Bugs Bunny & Taz: Time Busters Recompiled @VERSION@ - start here
 =================================================================
 
-A native PC version of the PlayStation game, with Daffy Duck as a third
-playable character and up to three players, each on their own PC. Nothing
-in this ZIP comes from the game: your PC builds it once from your own disc.
+A native PC version of the 2000 PlayStation (PS1) game, with Daffy Duck
+as a third playable character and up to three players, each on their own
+PC. Nothing in this ZIP comes from the game: your PC builds it once from
+your own disc.
 
 YOU NEED
 - Windows 10 (version 1903 or newer) or 11, 64-bit.

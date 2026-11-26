@@ -1,5 +1,11 @@
 # Windows build and a LAN / Radmin VPN match
 
+For developers: how to build this project (a native port of the 2000
+PlayStation game *Bugs Bunny & Taz: Time Busters*, see the
+[README](../README.md)) on a Windows PC, make the players' ZIP and run a
+match between PCs. Players need only
+[PLAYING_TOGETHER.md](PLAYING_TOGETHER.md).
+
 Written from the framework's own docs (`psxrecomp/docs/GETTING_STARTED.md`,
 `BUILDING.md`, `NETPLAY.md`) and its source.
 

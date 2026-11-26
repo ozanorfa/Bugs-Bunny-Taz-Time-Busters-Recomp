@@ -1,31 +1,85 @@
 # Bugs Bunny & Taz: Time Busters — Recompiled
 
-A native PC version of *Bugs Bunny & Taz: Time Busters* (PS1, USA), made by
-static recompilation with [psxrecomp](https://github.com/RetroPortingToolKit/psxrecomp)
-and its launcher [recomp-ui](https://github.com/RetroPortingToolKit/recomp-ui).
-It runs on macOS and Windows.
-
-It adds **Daffy Duck as a third playable character**, for up to three
-players. They can share one PC, or each play on their own PC over a LAN or
-Radmin VPN, each with a full-screen view of their own player.
+An unofficial fan port of the **PlayStation (PS1) game** *Bugs Bunny & Taz:
+Time Busters* (2000). It runs as a native program on Windows and macOS and
+adds **Daffy Duck as a third playable character**. Up to three players can
+share one PC, or each play on their own PC over a LAN or Radmin VPN, each
+with a full-screen view of their own player.
 
 ![Bugs, Taz and Daffy in Granwich: Daffy kicks](docs/images/three_players.jpg)
 
 **This repository holds no game data and no game code.** You need your own
-copy of the game (the USA disc, SLUS-01144). The game is built from that copy
-on your own machine.
+copy of the original PlayStation game (the USA disc, SLUS-01144). The game is
+built from that copy on your own machine.
 
-| | |
-|---|---|
-| Players | 1-3 (the third player is Daffy) |
-| Region | USA (SLUS-01144) |
-| Original developer | Artificial Mind and Movement |
-| Original publisher | Infogrames |
-| Year | 2000 |
+- New here? [The original game](#the-original-game) and
+  [What this project is](#what-this-project-is) explain both.
+- Players: the guide with every step for a match is
+  [docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md).
+- What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
-Players' guide, with every step for a match:
-[docs/PLAYING_TOGETHER.md](docs/PLAYING_TOGETHER.md). What changed in each version:
-[CHANGELOG.md](CHANGELOG.md).
+## The original game
+
+*Bugs Bunny & Taz: Time Busters* is a 3D platform game with two heroes. It
+was made by Artificial Mind and Movement and published by Infogrames under
+license from Warner Bros. It came out in 2000 on the PlayStation and on
+Windows PCs, as an indirect sequel to *Bugs Bunny: Lost in Time* (1999).
+This project starts from the PlayStation version only.
+
+**The story.** Daffy Duck, working as a pest exterminator, breaks Granny's
+time machine, the Time Regulator. He is thrown back in time with its core,
+the Time Gem, and the machine's gears scatter across history. Granny sends
+Bugs Bunny and her pet Taz after them: collect the gears, find the gem and
+bring Daffy back.
+
+**The world.** Granwich, Granny's town, is the hub. From there the heroes
+travel to four eras: Aztec, Viking, Arabian and Transylvanian. The gears
+they collect open the next era, and each era ends with a boss.
+
+**How it plays.**
+- Bugs and Taz move and fight differently, and some places and enemies need
+  both of them. For example, Bugs can jump on Taz's head to reach higher.
+- **One player:** you control one hero and the computer plays the other.
+  R1 swaps which hero you control.
+- **Two players:** controller 1 is Bugs and controller 2 is Taz, on one
+  shared screen with one camera. There is no split screen.
+- Daffy is part of the story but is never playable.
+- The game is in English, French or Spanish, chosen at the start.
+
+| | Original game | This project |
+|---|---|---|
+| Runs on | PlayStation (a separate Windows release exists too) | Windows and macOS, as a native program built from the PlayStation disc |
+| Players | 1-2: Bugs and Taz | 1-3: Bugs, Taz and Daffy |
+| Screen | one shared screen | in a match, each PC shows its own player full screen; on one PC, the shared screen or a split screen |
+| Play over a network | none | LAN or Radmin VPN, up to three PCs |
+| Disc | USA, SLUS-01144 | the same disc: your own copy |
+
+## What this project is
+
+*Recompiled* means that the game's program is not interpreted from the disc,
+as an emulator does. The [psxrecomp](https://github.com/RetroPortingToolKit/psxrecomp)
+tools read the program from your disc, translate it into C code and compile
+that into a native program for your computer (static recompilation). Most of
+the game then runs as native code.
+- psxrecomp's runtime recreates the PlayStation's hardware: the graphics and
+  sound chips, the CD drive, the controllers and the memory cards.
+- Its launcher, [recomp-ui](https://github.com/RetroPortingToolKit/recomp-ui),
+  adds controller set-up, picture options, mods and netplay.
+- The mods in this repository change what the game does: Daffy as a third
+  player, a camera for every player and a quicker start. See
+  [What the mods add](#what-the-mods-add).
+
+What is here, and what is not:
+- **Here:** the project's psxrecomp setup (`game.toml`, the symbol map), the
+  mods' code and packages, the build and setup tools, the Windows scripts,
+  the tests and these documents.
+- **Not here:** the disc, the BIOS and the game's code. The recompiled code
+  (`generated/`) is made from your own disc on your own machine and is never
+  committed. psxrecomp's bundled, MIT-licensed OpenBIOS stands in for Sony's
+  BIOS.
+- **Which disc:** the project is made for the USA PlayStation disc
+  (SLUS-01144), as a `.cue` and `.bin` dump. Setup checks that it is that
+  disc.
 
 ## What the mods add
 
@@ -156,6 +210,9 @@ The ZIP is made with `tools/make_player_zip.py`. See
 A ready-built package (extract, point it at the disc, play) is planned to
 replace this. It will be shared privately with players, because it holds the
 compiled game.
+
+On a Mac there is no players' package: build the game as in
+[Building (developers)](#building-developers).
 
 ## Building (developers)
 
