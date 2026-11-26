@@ -34,7 +34,7 @@ id = "bbt.shared.actor-update"
 [[feature]]
 id = "load-image"
 name = "Shared LoadImage hook (internal)"
-description = "Internal. One override of the game's texture upload (PsyQ LoadImage core) for the features that need it (the Turkish flag, the Transylvania-enemy test). Turned on automatically by those features."
+description = "Internal. One override of the game's texture upload (PsyQ LoadImage core) for the features that need it (the Turkish flag). Turned on automatically by those features."
 group = "Internal"
 default_enabled = false
 hidden = true

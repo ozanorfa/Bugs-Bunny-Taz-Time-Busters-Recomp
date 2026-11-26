@@ -1,19 +1,20 @@
 /*
  * bbt_disc_probe — runs the mod's host-side code (src/mods/bouze.c, donor.c,
- * donor_tex.c, with the plugin's own table from trca01_profile.h) on the
- * player's disc image and prints facts as JSON lines for the disc tests
- * (tests/test_disc_*.py). It prints counts, sizes, positions and hashes,
- * never game data. Files are addressed by (lba, size), which the tests take
- * from the disc's ISO 9660 directory.
+ * donor_tex.c, with the plugin's own values from daffy_profile.h and
+ * p3_profile.h) on the player's disc image and prints facts as JSON lines
+ * for the disc tests (tests/test_disc_*.py). It prints counts, sizes,
+ * positions and hashes, never game data. Files are addressed by (lba, size),
+ * which the tests take from the disc's ISO 9660 directory.
  *
- *   bbt_disc_probe bzz    <image> <lba> <size>
+ *   bbt_disc_probe bzz   <image> <lba> <size>
  *       header, every chunk decoded (length + FNV-1a 64), record stream
- *   bbt_disc_probe donor  <image> <lba> <size> [<spin_blob_out>]
- *       the TRCA01 enemy as the plugin extracts it; optionally writes the
- *       synthetic spin blob (built by donor_add_spin, not disc data)
- *   bbt_disc_probe levels <image> <donor_lba> <donor_size> <name>:<lba>:<size> ...
- *       per level: Taz's records patched as the plugin does, and the
- *       texture plan into Taz's VRAM
+ *   bbt_disc_probe daffy <image> <lba> <size>
+ *       Daffy (LEVEL1/RETRY.BZZ) as the third actor's plugin extracts him:
+ *       model, animations, synthetic spin, hold pose, textures and their
+ *       place in VRAM (the strip and the tall area)
+ *
+ * (Until 2026-11-26 the "donor" and "levels" modes probed the Transylvania
+ * enemy, then a third-character choice and Taz's replacement; removed.)
  *
  * Images: raw 2352-byte sectors (MODE1 or MODE2 form 1) or 2048-byte ISO.
  */
@@ -24,7 +25,8 @@
 #include "bouze.h"
 #include "donor.h"
 #include "donor_tex.h"
-#include "trca01_profile.h"
+#include "daffy_profile.h"
+#include "p3_profile.h"
 
 /* ---- disc --------------------------------------------------------------- */
 
@@ -118,13 +120,14 @@ static int cmd_bzz(const char* image, long lba, long size)
 static int load_donor(const char* image, long lba, long size, uint8_t** file, Donor* d,
                       DonorTex* t, int* spin_node)
 {
+    /* as bbt_daffy_runtime_load (src/mods/donor_runtime.c) */
     *file = read_file(image, lba, size);
-    if (!*file || !donor_extract(*file, (size_t)size, DONOR_ACTOR_TYPE, d))
+    if (!*file || !donor_extract_ids(*file, (size_t)size, kDaffyResIds, DAFFY_RES_COUNT, d))
         return 0;
     *spin_node = donor_add_spin(d, DONOR_SUB_SPIN, DONOR_SPIN_FRAMES);
     const DonorBlob* model = NULL;
     for (int i = 0; i < d->model_count; ++i)
-        if (d->models[i].sub == TAZ_MODEL_SUB)
+        if (d->models[i].sub == DAFFY_MODEL_SUB)
             model = &d->models[i];
     return model && donor_tex_extract(*file, (size_t)size, d, model, t);
 }
@@ -137,7 +140,7 @@ static const DonorBlob* find_anim(const Donor* d, uint16_t sub)
     return NULL;
 }
 
-static int cmd_donor(const char* image, long lba, long size, const char* spin_out)
+static int cmd_daffy(const char* image, long lba, long size)
 {
     uint8_t* file = NULL;
     Donor d;
@@ -158,36 +161,17 @@ static int cmd_donor(const char* image, long lba, long size, const char* spin_ou
     printf("],\"anims\":%d,\"anim_subs\":[", d.anim_count);
     for (int i = 0; i < d.anim_count; ++i)
         printf("%s%u", i ? "," : "", d.anims[i].sub);
-    printf("],\"map\":[");
-    for (int i = 0; i < TAZ_MAP_COUNT; ++i) {
-        const DonorBlob* b = find_anim(&d, kTazToTrca01[i].donor_sub);
-        printf("%s{\"taz\":%u,\"donor\":%u,\"found\":%s,\"frames\":%u}", i ? "," : "",
-               kTazToTrca01[i].target_sub, kTazToTrca01[i].donor_sub, b ? "true" : "false",
-               b ? b->frames : 0);
-    }
-    printf("],\"defaults\":[");
-    for (int i = 0; i < DONOR_DEFAULT_COUNT; ++i) {
-        const DonorBlob* b = find_anim(&d, kDonorDefaults[i]);
-        printf("%s{\"sub\":%u,\"found\":%s,\"frames\":%u}", i ? "," : "", kDonorDefaults[i],
-               b ? "true" : "false", b ? b->frames : 0);
-    }
     const DonorBlob* s = find_anim(&d, DONOR_SUB_SPIN);
     printf("],\"spin_node\":%d,\"spin_frames\":%u,\"spin_size\":%u", spin, s ? s->frames : 0,
            s ? s->size : 0);
-    if (s && spin_out) {
-        FILE* o = fopen(spin_out, "wb");
-        if (o) {
-            fwrite(d.image + s->off, 1, s->size, o);
-            fclose(o);
-        }
-    }
-    /* Phase 4: the third actor's hold animation (on a copy of the donor). */
+    /* The hold pose built from his own animation (the plugin's fallback
+     * when Bugs' idle cannot be fitted), on a copy of the donor. */
     {
         Donor c;
         int hold_ok = donor_copy(&d, &c) &&
-                      donor_add_hold(&c, DONOR_IDLE_SUB, DONOR_SUB_HOLD, DONOR_HOLD_FRAMES);
+                      donor_add_hold(&c, DAFFY_POSE_SUB, DONOR_SUB_HOLD, DONOR_HOLD_FRAMES);
         const DonorBlob* h = hold_ok ? find_anim(&c, DONOR_SUB_HOLD) : NULL;
-        const DonorBlob* src = find_anim(&d, DONOR_IDLE_SUB);
+        const DonorBlob* src = find_anim(&d, DAFFY_POSE_SUB);
         int empty = 0;
         uint32_t f0 = 0;
         if (h && src) {
@@ -223,12 +207,16 @@ static int cmd_donor(const char* image, long lba, long size, const char* spin_ou
         for (int i = 0; i < t.clut_count; ++i)
             printf("%s%u", i ? "," : "", t.cluts[i]);
         printf("]");
-        /* Phase 4: the third actor's strip plan, and where its patched
-         * records sample (inside the new block, the kept source row). */
+        /* Phase 4: the third actor's plan (the strip, and the tall area for
+         * blocks taller than it), and where its patched records sample
+         * (inside the new block, the kept source row). */
         DonorTexPlan sp;
-        const int strip_ok = donor_tex_plan_strip(&t, P3_STRIP_X, P3_STRIP_Y, P3_STRIP_W,
-                                                  P3_STRIP_H, &sp);
-        printf(",\"strip\":{\"ok\":%s", strip_ok ? "true" : "false");
+        const int strip_ok = donor_tex_plan_strip_tall(&t, P3_STRIP_X, P3_STRIP_Y, P3_STRIP_W,
+                                                       P3_STRIP_H, P3_TALL_X, P3_TALL_Y,
+                                                       P3_TALL_W, P3_TALL_H, &sp);
+        printf(",\"strip\":{\"ok\":%s,\"area\":[%d,%d,%d,%d],\"tall\":[%d,%d,%d,%d]",
+               strip_ok ? "true" : "false", P3_STRIP_X, P3_STRIP_Y, P3_STRIP_W, P3_STRIP_H,
+               P3_TALL_X, P3_TALL_Y, P3_TALL_W, P3_TALL_H);
         if (strip_ok) {
             int outside = 0, wrong_row = 0;
             for (int i = 0; i < t.record_count; ++i) {
@@ -266,232 +254,14 @@ static int cmd_donor(const char* image, long lba, long size, const char* spin_ou
     return tex_ok && spin ? 0 : 1;
 }
 
-/* ---- levels ------------------------------------------------------------- */
-
-/* VRAM a level's TIM list uploads (image block, then its CLUT block). */
-static void mark_tims(VramMap* m, const uint8_t* s, size_t sl, const uint8_t* c3, size_t cl)
-{
-    size_t pos = 0;
-    BouzeRecord r;
-    while (bouze_next_record(s, sl, &pos, &r) == 1) {
-        if (r.kind != 0x28)
-            continue;
-        size_t tp = r.tags;
-        BouzeTag t;
-        while (bouze_next_tag(s, &r, &tp, &t)) {
-            if (t.tag != 0x29 || t.len != 8)
-                continue;
-            const uint32_t off = bouze_u32(s + t.payload);
-            if ((size_t)off + 8u > cl || bouze_u32(c3 + off) != 0x10u)
-                continue;
-            const uint32_t flags = bouze_u32(c3 + off + 4);
-            size_t p = off + 8u;
-            for (int k = 0; k < 2; ++k) {
-                if (k == 0 && !(flags & 8u))
-                    continue;
-                if (p + 12u > cl)
-                    break;
-                const uint32_t bn = bouze_u32(c3 + p);
-                const int x = bouze_u16(c3 + p + 4), y = bouze_u16(c3 + p + 6);
-                const int w = bouze_u16(c3 + p + 8);
-                int h = bouze_u16(c3 + p + 10);
-                if (w && bn >= 12u && (int)((bn - 12u) / (2u * (uint32_t)w)) < h)
-                    h = (int)((bn - 12u) / (2u * (uint32_t)w));
-                vram_map_mark(m, x, y, w, h);
-                p += bn;
-            }
-        }
-    }
-}
-
-typedef struct HdrCtx {
-    const uint8_t* blobs;
-    size_t len;
-} HdrCtx;
-
-static int read_hdr(void* ctx, uint32_t off, uint8_t out[8])
-{
-    const HdrCtx* c = (const HdrCtx*)ctx;
-    if ((size_t)off + 8u > c->len)
-        return 0;
-    memcpy(out, c->blobs + off, 8);
-    return 1;
-}
-
-static uint8_t* chunk(const uint8_t* f, const BouzeHeader* h, uint32_t type, size_t* len)
-{
-    const int i = bouze_find_chunk(h, type);
-    *len = 0;
-    return i < 0 ? NULL : bouze_decompress(f + h->file_off[i], h->size[i], len);
-}
-
-static int overlaps(const int* r, int n)
-{
-    int c = 0;
-    for (int i = 0; i < n; ++i)
-        for (int k = i + 1; k < n; ++k)
-            c += r[4 * i] < r[4 * k] + r[4 * k + 2] && r[4 * k] < r[4 * i] + r[4 * i + 2] &&
-                 r[4 * i + 1] < r[4 * k + 1] + r[4 * k + 3] && r[4 * k + 1] < r[4 * i + 1] + r[4 * i + 3];
-    return c;
-}
-
-static void probe_level(const char* image, const char* name, long lba, long size, const Donor* d,
-                        const DonorTex* t)
-{
-    uint8_t* f = read_file(image, lba, size);
-    BouzeHeader h;
-    if (!f || !bouze_parse_header(f, (size_t)size, &h)) {
-        printf("{\"name\":\"%s\",\"ok\":false,\"err\":\"header\"}\n", name);
-        free(f);
-        return;
-    }
-    size_t sl, bl, cl;
-    uint8_t* s = chunk(f, &h, BOUZE_CHUNK_STREAM, &sl);
-    uint8_t* b4 = chunk(f, &h, BOUZE_CHUNK_BLOBS, &bl);
-    uint8_t* c3 = chunk(f, &h, 3, &cl);
-    printf("{\"name\":\"%s\",\"ok\":%s", name, s && b4 ? "true" : "false");
-    uint32_t moff = 0, msize = 0;
-    const int has_taz = s && donor_find_model(s, sl, TYPE_TAZ, TAZ_MODEL_SUB, &moff, &msize);
-    printf(",\"has_taz\":%s", has_taz ? "true" : "false");
-    if (s && b4 && has_taz) {
-        /* Patch exactly as the plugin does (any image address works: only
-         * the arithmetic is checked). */
-        uint8_t* orig = (uint8_t*)malloc(sl);
-        memcpy(orig, s, sl);
-        const uint32_t base = 0x80135000u, img = 0x9F000000u;
-        DonorWrite w[256];
-        DonorAnimFix fx[256];
-        int nf = 0;
-        DonorPatchStats st;
-        HdrCtx ctx = {b4, bl};
-        int recs0_end, recs1_end;
-        const int recs0 = count_records(orig, sl, &recs0_end);
-        int n = donor_patch_stream(s, sl, TYPE_TAZ, d, img, base, kTazToTrca01, TAZ_MAP_COUNT,
-                                   kDonorDefaults, DONOR_DEFAULT_COUNT, read_hdr, &ctx, w, 256, fx,
-                                   256, &nf, &st);
-        const int blobs = n;
-        if (n > 0)
-            n = donor_patch_actor_scale(s, sl, TYPE_TAZ, 0x0C00, w, n, 256);
-        int outside = 0, in_image = 1;
-        for (size_t i = 0; i < sl; ++i)
-            if (s[i] != orig[i]) {
-                int in = 0;
-                for (int k = 0; k < n; ++k)
-                    in |= i >= w[k].off && i < w[k].off + w[k].len;
-                outside += !in;
-            }
-        for (int k = 0; k < blobs; ++k) {
-            const uint32_t a = base + bouze_u32(s + w[k].off), len = bouze_u32(s + w[k].off + 4);
-            if (a < img || a + len > img + d->image_size)
-                in_image = 0;
-        }
-        const int recs1 = count_records(s, sl, &recs1_end);
-        printf(",\"patch\":{\"result\":%d,\"blobs\":%d,\"scale\":%d,\"actors\":%d,\"ids\":%d,"
-               "\"models\":%d,\"anims_mapped\":%d,\"anims_default\":%d,\"other\":%d,\"fixes\":%d,"
-               "\"outside_payloads\":%d,\"targets_in_image\":%s,\"records\":[%d,%d],"
-               "\"stream_end\":%s}",
-               n, blobs, n - blobs, st.actor_records, st.resource_ids, st.models,
-               st.anims_mapped, st.anims_default, st.other, nf, outside,
-               in_image ? "true" : "false", recs0, recs1,
-               recs0_end && recs1_end ? "true" : "false");
-        free(orig);
-
-        DonorTexPool pool;
-        const int pool_ok = moff + (size_t)msize <= bl &&
-                            donor_tex_pool_from_model(b4 + moff, msize, &pool);
-        printf(",\"pool\":{\"ok\":%s,\"rects\":%d,\"cluts\":%d}", pool_ok ? "true" : "false",
-               pool_ok ? pool.rect_count : 0, pool_ok ? pool.clut_count : 0);
-        if (pool_ok && c3) {
-            VramMap* up = (VramMap*)calloc(1, sizeof(VramMap));
-            mark_tims(up, s, sl, c3, cl);
-            DonorTexPlan plan;
-            const int ok = donor_tex_plan(t, &pool, up, &plan);
-            printf(",\"plan\":{\"ok\":%s", ok ? "true" : "false");
-            if (ok) {
-                /* Every patched texel inside its group's new block; blocks and
-                 * CLUTs inside uploaded VRAM left of the frame buffers, no
-                 * overlaps. */
-                int bad = 0, not_uploaded = 0, beyond = 0;
-                for (int i = 0; i < t->record_count; ++i) {
-                    const DonorTexRecord* r = &t->records[i];
-                    uint8_t o[12];
-                    donor_tex_patch_record(t, &plan, r, d->image + r->off, o);
-                    const int g = r->group, bx = plan.block_x[g], by = plan.block_y[g];
-                    const int px = (plan.tpage[g] & 0xF) * 64, py = ((plan.tpage[g] >> 4) & 1) * 256;
-                    for (int k = 0; k < (r->shift_u3 ? 4 : 3); ++k) {
-                        const int u = o[k == 3 ? 10 : 4 * k], v = o[k == 3 ? 11 : 4 * k + 1];
-                        const int x = px + u / 4, y = py + v;
-                        bad += x < bx || x >= bx + t->blocks[g].w || y < by || y >= by + t->blocks[g].h;
-                    }
-                }
-                int rects[4 * 2 * DONOR_TEX_MAX_CLUTS], nr = 0;
-                for (int g = 0; g < t->clut_count; ++g) {
-                    const int bw = t->blocks[g].w, bh = t->blocks[g].h;
-                    rects[4 * nr] = plan.block_x[g]; rects[4 * nr + 1] = plan.block_y[g];
-                    rects[4 * nr + 2] = bw; rects[4 * nr + 3] = bh; ++nr;
-                    rects[4 * nr] = plan.clut_x[g]; rects[4 * nr + 1] = plan.clut_y[g];
-                    rects[4 * nr + 2] = 16; rects[4 * nr + 3] = 1; ++nr;
-                    for (int j = 0; j < bh; ++j)
-                        for (int i = 0; i < bw; ++i)
-                            not_uploaded += vram_map_is_free(up, plan.block_x[g] + i, plan.block_y[g] + j, 1, 1);
-                    for (int i = 0; i < 16; ++i)
-                        not_uploaded += vram_map_is_free(up, plan.clut_x[g] + i, plan.clut_y[g], 1, 1);
-                    beyond += plan.block_x[g] + bw > 512 || plan.clut_x[g] + 16 > 512;
-                }
-                printf(",\"texels_outside\":%d,\"overlaps\":%d,\"not_uploaded\":%d,"
-                       "\"beyond_512\":%d",
-                       bad, overlaps(rects, nr), not_uploaded, beyond);
-            }
-            printf("}");
-            free(up);
-        }
-    }
-    printf("}\n");
-    fflush(stdout);
-    free(s);
-    free(b4);
-    free(c3);
-    free(f);
-}
-
-static int cmd_levels(const char* image, long dlba, long dsize, int argc, char** argv)
-{
-    uint8_t* file = NULL;
-    Donor d;
-    DonorTex t;
-    int spin = 0;
-    memset(&d, 0, sizeof d);
-    memset(&t, 0, sizeof t);
-    if (!load_donor(image, dlba, dsize, &file, &d, &t, &spin)) {
-        printf("{\"ok\":false,\"err\":\"donor\"}\n");
-        return 1;
-    }
-    for (int i = 0; i < argc; ++i) {
-        char name[128];
-        long lba = 0, size = 0;
-        if (sscanf(argv[i], "%127[^:]:%ld:%ld", name, &lba, &size) != 3) {
-            printf("{\"ok\":false,\"err\":\"bad level argument\"}\n");
-            continue;
-        }
-        probe_level(image, name, lba, size, &d, &t);
-    }
-    donor_tex_free(&t);
-    donor_free(&d);
-    free(file);
-    return 0;
-}
-
 int main(int argc, char** argv)
 {
     if (argc >= 5 && strcmp(argv[1], "bzz") == 0)
         return cmd_bzz(argv[2], atol(argv[3]), atol(argv[4]));
-    if (argc >= 5 && strcmp(argv[1], "donor") == 0)
-        return cmd_donor(argv[2], atol(argv[3]), atol(argv[4]), argc >= 6 ? argv[5] : NULL);
-    if (argc >= 5 && strcmp(argv[1], "levels") == 0)
-        return cmd_levels(argv[2], atol(argv[3]), atol(argv[4]), argc - 5, argv + 5);
+    if (argc >= 5 && strcmp(argv[1], "daffy") == 0)
+        return cmd_daffy(argv[2], atol(argv[3]), atol(argv[4]));
     fprintf(stderr,
             "usage: bbt_disc_probe bzz <image> <lba> <size>\n"
-            "       bbt_disc_probe donor <image> <lba> <size> [<spin_out>]\n"
-            "       bbt_disc_probe levels <image> <donor_lba> <donor_size> <name>:<lba>:<size> ...\n");
+            "       bbt_disc_probe daffy <image> <lba> <size>\n");
     return 2;
 }

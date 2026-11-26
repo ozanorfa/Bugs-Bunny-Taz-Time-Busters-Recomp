@@ -20,7 +20,7 @@
 #include "daffy_profile.h"
 #include "mod_plugins.h"
 #include "retarget.h"
-#include "trca01_profile.h"
+#include "p3_profile.h"
 
 #define SOURCE_FILE "LEVEL1/GRANNY.BZZ"   /* Bugs and Taz, every animation */
 #define BUGS_IDLE   0x001Fu

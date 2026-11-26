@@ -483,36 +483,86 @@ out:
     return ok;
 }
 
+/* Block i at (x, y) with every (1 << sh)-th row kept. */
+static void plan_block(const DonorTex* t, DonorTexPlan* plan, int i, int x, int y, int sh)
+{
+    const DonorTexBlock* b = &t->blocks[i];
+    const int px = x & ~63, py = y & ~255;
+    plan->block_x[i] = (uint16_t)x;
+    plan->block_y[i] = (uint16_t)y;
+    plan->block_h[i] = (uint16_t)((b->h + (1 << sh) - 1) >> sh);
+    plan->vshift[i] = (uint8_t)sh;
+    plan->vsrc[i] = (uint8_t)(b->y - t->page_y);
+    plan->vdst[i] = (uint8_t)(y - py);
+    plan->tpage[i] = (uint16_t)((px / 64) | ((py / 256) << 4));
+    plan->du[i] = (int16_t)(4 * ((x - px) - (b->x - t->page_x)));
+    plan->dv[i] = (int16_t)(plan->vdst[i] - plan->vsrc[i]);
+}
+
+/* The row shift that makes a block of `bh` rows fit `h` rows. */
+static int rows_shift(int bh, int h)
+{
+    int sh = 0;
+    while (((bh + (1 << sh) - 1) >> sh) > h)
+        ++sh;
+    return sh;
+}
+
+/* The next x from `x` where a block of width `bw` stays inside one 64-unit
+ * texture page. */
+static int page_x(int x, int bw)
+{
+    return x / 64 != (x + bw - 1) / 64 ? (x + 63) & ~63 : x;
+}
+
+static int area_ok(int x, int y, int w, int h)
+{
+    return w > 0 && h > 0 && x >= 0 && y >= 0 && x + w <= (int)VRAM_W &&
+           y + h <= (int)VRAM_H && y / 256 == (y + h - 1) / 256;
+}
+
 int donor_tex_plan_strip(const DonorTex* t, int x0, int y0, int w, int h, DonorTexPlan* plan)
+{
+    return donor_tex_plan_strip_tall(t, x0, y0, w, h, 0, 0, 0, 0, plan);
+}
+
+int donor_tex_plan_strip_tall(const DonorTex* t, int x0, int y0, int w, int h,
+                              int tx, int ty, int tw, int th, DonorTexPlan* plan)
 {
     memset(plan, 0, sizeof(*plan));
     if (t->block_count == 0 || t->clut_count == 0 || t->block_count != t->clut_count ||
-        w <= 0 || h <= 0 || x0 < 0 || y0 < 0 || x0 + w > (int)VRAM_W ||
-        y0 + h > (int)VRAM_H || y0 / 256 != (y0 + h - 1) / 256)
+        !area_ok(x0, y0, w, h))
         return 0;
-    const int py = y0 & ~255;
-    int x = x0;
+    if (tw != 0 && (!area_ok(tx, ty, tw, th) || th <= h ||
+                    (tx < x0 + w && x0 < tx + tw && ty < y0 + h && y0 < ty + th)))
+        return 0;
+    int x = x0, xt = tx, yt = ty, shelf = 0;
     for (int i = 0; i < t->block_count; ++i) {
         const DonorTexBlock* b = &t->blocks[i];
         if (b->w == 0 || b->h == 0 || b->w > 64)
             return 0;
-        int sh = 0;
-        while (((b->h + (1 << sh) - 1) >> sh) > h)
-            ++sh;
-        if (x / 64 != (x + b->w - 1) / 64)
-            x = (x + 63) & ~63;               /* next texture page */
+        if (tw != 0 && b->h > h) {
+            /* shelves: left to right, then the next row of blocks below */
+            const int sh = rows_shift(b->h, th), bh = (b->h + (1 << sh) - 1) >> sh;
+            int at = page_x(xt, b->w);
+            if (at + b->w > tx + tw) {
+                yt += shelf;
+                shelf = 0;
+                xt = tx;
+                at = page_x(xt, b->w);
+            }
+            if (at + b->w <= tx + tw && yt + bh <= ty + th) {
+                plan_block(t, plan, i, at, yt, sh);
+                xt = at + b->w;
+                if (bh > shelf)
+                    shelf = bh;
+                continue;
+            }
+        }
+        x = page_x(x, b->w);
         if (x + b->w > x0 + w)
             return 0;
-        const int px = x & ~63;
-        plan->block_x[i] = (uint16_t)x;
-        plan->block_y[i] = (uint16_t)y0;
-        plan->block_h[i] = (uint16_t)((b->h + (1 << sh) - 1) >> sh);
-        plan->vshift[i] = (uint8_t)sh;
-        plan->vsrc[i] = (uint8_t)(b->y - t->page_y);
-        plan->vdst[i] = (uint8_t)(y0 - py);
-        plan->tpage[i] = (uint16_t)((px / 64) | ((py / 256) << 4));
-        plan->du[i] = (int16_t)(4 * ((x - px) - (b->x - t->page_x)));
-        plan->dv[i] = (int16_t)(plan->vdst[i] - plan->vsrc[i]);
+        plan_block(t, plan, i, x, y0, rows_shift(b->h, h));
         x += b->w;
     }
     int cx = (x + 15) & ~15, cy = y0;

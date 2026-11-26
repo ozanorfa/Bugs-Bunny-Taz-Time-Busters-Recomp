@@ -7,9 +7,12 @@
  *
  * P4-M1 (spawn): in 2-player mode, every level with Taz gets a third
  * character: a clone of Taz's actor (his behaviour script, moves and
- * physics) drawn with the TRCA01 enemy's model, animations and textures,
- * while Taz stays Taz. P4-M2 (control): the clone's update reads the third
- * player's input record instead of player 2's.
+ * physics) drawn as Daffy Duck: his model and textures read from the
+ * player's disc (daffy_profile.h), Bugs' moves fitted to his skeleton
+ * (daffy_moves.c), while Taz stays Taz. (Until 2026-11-26 an option could
+ * draw it as the Transylvania enemy instead; removed, user: Daffy only.)
+ * P4-M2 (control): the clone's update reads the third player's input record
+ * instead of player 2's.
  *
  * How the game runs its actors (Ghidra, NOTES.md "Phase 4 — third actor"):
  *   - FUN_80013030 (per view, every frame, and once right after a level
@@ -45,14 +48,16 @@
  * Actor_Update, input slot 1's fields +0x00..+0x0D hold the third player's
  * record (third_player.c) and player 2's own are put back afterwards.
  *
- * Textures: Taz keeps his VRAM, so the enemy's texels and CLUTs go to VRAM
+ * Textures: Taz keeps his VRAM, so Daffy's texels and CLUTs go to VRAM
  * nothing else uses: x 512..1023, y 240..255, the rows below the first
  * displayed frame buffer (display 512x240 at 512,0 / 512,256, draw areas
  * 512,16 and 512,272 of 512x216: gpu_state; the frame's fills cover only
  * the draw areas and every animated-texture copy lands at x < 512: GPU
- * frame dumps in Granwich). Those 16 rows are lower than most of the
- * enemy's blocks (up to 32 rows), so such blocks keep every second texel
- * row and the model's records sample them at half the vertical resolution.
+ * frame dumps in Granwich). Those 16 rows are lower than Daffy's two
+ * tallest blocks (up to 32 rows), so a block taller
+ * than the strip goes to a second area below x = 512 that no level writes
+ * while it is played (P3_TALL_*, tests/soak_vram_free.py), at full height
+ * (BUGS #25; before, it kept every second texel row).
  *
  * State: everything that changes during play is in guest memory (the mod
  * block below and the pool slot), so savestates and rollback carry it.
@@ -67,7 +72,7 @@
  * controller (Settings -> Input, Player 3) and has pressed a button. "always" spawns it anyway (the
  * tests drive seat 2 through the debug command).
  *
- * Daffy (option "character" = daffy): his attack is drawn (draw_pass_wrap)
+ * Daffy: his attack is drawn (draw_pass_wrap)
  * and his sounds are Bugs' (sound_start_wrap, option "sounds"); NOTES.md
  * "Daffy's spin and sounds".
  *
@@ -98,7 +103,7 @@
 #include "psx_netplay.h"
 #include "sio.h"
 #include "third_player.h"
-#include "trca01_profile.h"
+#include "p3_profile.h"
 #include "mod_blocks.h"
 
 #define PLUGIN_ACTOR "bbt.third-character.p3-actor"
@@ -151,10 +156,10 @@
 #define ADDR_GAUGE       0x80093951u   /* gauge of a ForceToGauge (+0x0C 0x200) actor */
 #define ADDR_DEATH_DONE  0x80022510u   /* FUN_80022510(hero, ...): its death is over */
 #define POOL_KEEP_FREE 8      /* actor slots left to the game's own spawns */
-/* Size option ("size" of feature p3): percent of the enemy's own size,
- * written to the clone's scale +0xEC/+0xEE/+0xF0 (s16, 0x1000 = 1.0;
- * verified in RAM in Phase 3: shrinks the drawn model, movement unchanged). */
-#define DEFAULT_SIZE_PERCENT 75
+/* Daffy's own size, written to the clone's scale +0xEC/+0xEE/+0xF0 (s16,
+ * 0x1000 = 1.0; verified in RAM in Phase 3: it scales the drawn model,
+ * movement unchanged): a little shorter than Bugs, as in the cartoons. */
+#define P3_SCALE 0x1000
 #define SPAWN_GAP    160      /* distance from Taz, away from Bugs */
 #define MAX_LIST_WALK 1024
 
@@ -212,23 +217,15 @@ static uint32_t g_image_size;
 static CloneResLayout g_layout;
 static DonorTexPlan g_plan;
 static int g_tex_planned;
-static int16_t g_scale = 0x1000 * DEFAULT_SIZE_PERCENT / 100;
-/* The third actor's own copy of the donor: the shared one (donor_runtime.c,
- * also Phase 3's) plus the hold animation (trca01_profile.h). */
+/* The third actor's own copy of the donor: Daffy as loaded
+ * (donor_runtime.c) plus his moves and the hold animation (p3_profile.h). */
 static Donor g_donor;
 #define MAP_CAP 112
 static DonorAnimMap g_map[MAP_CAP];
 static int g_map_count;
-static uint16_t g_defaults[DONOR_DEFAULT_COUNT];
+static uint16_t g_defaults[1];
 static int g_default_count;
-
-/* Which character the clone is drawn as (option "character", read at
- * activation): 0 the TRCA01 enemy, 1 Daffy (daffy_profile.h). */
-static int g_daffy_char;
-/* The g_daffy_char that prepare()'s results are for, -1 before the first
- * activation (BUGS #55: the option can change between sessions). */
-static int g_prepared_for = -1;
-#define RT (g_daffy_char ? bbt_daffy_runtime() : bbt_donor_runtime())
+#define RT (bbt_daffy_runtime())
 /* Daffy's attack moves were built from Bugs' attack (daffy_moves.c): his
  * body is drawn during the spin (draw_pass_wrap). */
 static int g_daffy_attack;
@@ -263,7 +260,7 @@ static void prepare(void)
 {
     if (g_prepared != 0 || !g_block)
         return;
-    if ((g_daffy_char ? bbt_daffy_runtime_load() : bbt_donor_runtime_load()) != 1) {
+    if (bbt_daffy_runtime_load() != 1) {
         if (RT->state < 0)
             g_prepared = -1;
         return;
@@ -272,60 +269,43 @@ static void prepare(void)
         g_prepared = -1;
         return;
     }
+    /* His set-up; Bugs' moves retargeted onto him (daffy_moves.c: his
+     * attack for Taz's spin family, the still pose from Bugs' idle);
+     * everything else on the still pose. */
     g_map_count = 0;
-    uint16_t hold_src = DONOR_IDLE_SUB;
-    if (g_daffy_char) {
-        /* Daffy: his set-up; Bugs' moves retargeted onto him (daffy_moves.c:
-         * his attack for Taz's spin family, the still pose from Bugs' idle);
-         * everything else on the still pose. */
-        g_map[g_map_count++] = (DonorAnimMap){0x0001u, 0x0001u};
-        hold_src = DAFFY_POSE_SUB;
-        BbtDaffyMoveStats ms;
-        const int k = bbt_daffy_add_moves(&g_donor, g_map + g_map_count, MAP_CAP - g_map_count,
-                                          DONOR_SUB_HOLD, DONOR_HOLD_FRAMES, &ms);
-        if (k > 0)
-            g_map_count += k;
-        /* Without Bugs' attack: the synthetic spin (spin start too: it must
-         * name the attach node for the tornado). */
-        static const uint16_t kSpin[] = {0x0072u, 0x004Fu, 0x0097u};
-        for (int i = 0; i < 3; ++i) {
-            int mapped = 0;
-            for (int m = 0; m < g_map_count; ++m)
-                mapped |= g_map[m].target_sub == kSpin[i];
-            if (!mapped && g_map_count < MAP_CAP)
-                g_map[g_map_count++] = (DonorAnimMap){kSpin[i], DONOR_SUB_SPIN};
-        }
-        g_daffy_attack = ms.attack == 3;
-        count("daffy_attack", ms.attack);
-        count("daffy_moves", ms.moves);
-        count("daffy_move_bytes", ms.bytes);
-        count("daffy_without_source", ms.without_source);
-        count("daffy_failed", ms.failed);
-        if (ms.hold)
-            hold_src = 0;
-    } else {
-        /* Roles: Phase 3's table, plus Taz's idle chain on the enemy's
-         * stance at its own length and speed; everything else holds a
-         * still pose. */
-        for (int i = 0; i < TAZ_MAP_COUNT; ++i)
-            g_map[g_map_count++] = kTazToTrca01[i];
-        for (int i = 0; i < TAZ_IDLE_COUNT; ++i)
-            g_map[g_map_count++] = (DonorAnimMap){kTazIdleIds[i], DONOR_IDLE_SUB};
+    g_map[g_map_count++] = (DonorAnimMap){0x0001u, 0x0001u};
+    uint16_t hold_src = DAFFY_POSE_SUB;
+    BbtDaffyMoveStats ms;
+    const int k = bbt_daffy_add_moves(&g_donor, g_map + g_map_count, MAP_CAP - g_map_count,
+                                      DONOR_SUB_HOLD, DONOR_HOLD_FRAMES, &ms);
+    if (k > 0)
+        g_map_count += k;
+    /* Without Bugs' attack: the synthetic spin (spin start too: it must
+     * name the attach node for the tornado). */
+    static const uint16_t kSpin[] = {0x0072u, 0x004Fu, 0x0097u};
+    for (int i = 0; i < 3; ++i) {
+        int mapped = 0;
+        for (int m = 0; m < g_map_count; ++m)
+            mapped |= g_map[m].target_sub == kSpin[i];
+        if (!mapped && g_map_count < MAP_CAP)
+            g_map[g_map_count++] = (DonorAnimMap){kSpin[i], DONOR_SUB_SPIN};
     }
+    g_daffy_attack = ms.attack == 3;
+    count("daffy_attack", ms.attack);
+    count("daffy_moves", ms.moves);
+    count("daffy_move_bytes", ms.bytes);
+    count("daffy_without_source", ms.without_source);
+    count("daffy_failed", ms.failed);
+    if (ms.hold)
+        hold_src = 0;
     if (!hold_src || donor_add_hold(&g_donor, hold_src, DONOR_SUB_HOLD, DONOR_HOLD_FRAMES)) {
         g_defaults[0] = DONOR_SUB_HOLD;
         g_default_count = 1;
         count("hold_ready", 1);
-    } else if (g_daffy_char) {
+    } else {
         g_prepared = -1;
         count("hold_unavailable", 1);
         return;
-    } else {
-        /* Without it: Phase 3's standing defaults (moving loops, cut). */
-        for (int i = 0; i < DONOR_DEFAULT_COUNT; ++i)
-            g_defaults[i] = kDonorDefaults[i];
-        g_default_count = DONOR_DEFAULT_COUNT;
-        count("hold_unavailable", 1);
     }
     const Donor* d = &g_donor;
     if (d->image_size > BLK_IMAGE_MAX || d->model_count == 0 || d->anim_count == 0) {
@@ -343,8 +323,9 @@ static void prepare(void)
     const uint32_t image = g_block + BLK_IMAGE;
 
     g_tex_planned = RT->tex_ready &&
-                    donor_tex_plan_strip(&RT->tex, P3_STRIP_X, P3_STRIP_Y, P3_STRIP_W,
-                                         P3_STRIP_H, &g_plan);
+                    donor_tex_plan_strip_tall(&RT->tex, P3_STRIP_X, P3_STRIP_Y, P3_STRIP_W,
+                                              P3_STRIP_H, P3_TALL_X, P3_TALL_Y, P3_TALL_W,
+                                              P3_TALL_H, &g_plan);
     if (g_tex_planned) {
         for (int i = 0; i < RT->tex.record_count; ++i) {
             const DonorTexRecord* r = &RT->tex.records[i];
@@ -378,10 +359,7 @@ static void prepare(void)
 static void read_options(void)
 {
     char v[16];
-    /* the manifest's defaults: Daffy, Bugs' sounds, only with a third player */
-    g_daffy_char = psx_mod_option_value("bbt.third-character", "p3", "character", v, sizeof v)
-                       ? strcmp(v, "daffy") == 0
-                       : 1;
+    /* the manifest's defaults: Bugs' sounds, only with a third player */
     g_sounds = SOUNDS_BUGS;
     if (psx_mod_option_value("bbt.third-character", "p3", "sounds", v, sizeof v))
         g_sounds = strcmp(v, "taz") == 0 ? SOUNDS_TAZ : strcmp(v, "quiet") == 0 ? SOUNDS_QUIET : SOUNDS_BUGS;
@@ -389,37 +367,6 @@ static void read_options(void)
                       strcmp(v, "always") == 0;
     g_comeback_team = psx_mod_option_value("bbt.third-character", "p3", "comeback", v, sizeof v) &&
                       strcmp(v, "team") == 0;
-    if (g_daffy_char) {
-        /* his own size: a little shorter than Bugs, as in the cartoons; the
-         * size option is the enemy's */
-        g_scale = 0x1000;
-        return;
-    }
-    int pct = DEFAULT_SIZE_PERCENT;
-    if (psx_mod_option_value("bbt.third-character", "p3", "size", v, sizeof v)) {
-        const int p = atoi(v);
-        if (p >= 25 && p <= 150)
-            pct = p;
-    }
-    g_scale = (int16_t)(0x1000 * pct / 100);
-}
-
-/* Drop what prepare() built (BUGS #55), so the next prepare() builds the
- * image, animation map, texture plan and attack flag of the character the
- * option names now. Activation only: no clone is in a level then. */
-static void unprepare(void)
-{
-    free(g_image);
-    g_image = NULL;
-    g_image_size = 0;
-    donor_free(&g_donor);
-    memset(&g_layout, 0, sizeof g_layout);
-    memset(&g_plan, 0, sizeof g_plan);
-    g_tex_planned = 0;
-    g_map_count = 0;
-    g_default_count = 0;
-    g_daffy_attack = 0;
-    g_prepared = 0;
 }
 
 static const BbtActorUpdateHook kInputHook;
@@ -430,13 +377,6 @@ static void activate(void)
     read_options();
     /* fixed address whatever was played before (BUGS #56, mod_blocks.h) */
     g_block = bbt_mod_block(BBT_BLOCK_P3_ACTOR);
-    if (g_prepared_for != g_daffy_char) {
-        if (g_prepared_for >= 0) {
-            unprepare();
-            count("character_changed", 1);
-        }
-        g_prepared_for = g_daffy_char;
-    }
     prepare();
 }
 BBT_BLOCK_SIZE_IS(p3_actor, BLK_SIZE, BBT_BLOCK_P3_ACTOR_BYTES);
@@ -541,7 +481,7 @@ static int upload_textures(uint32_t sp)
     if (!g_tex_planned)
         return 0;
     const DonorTex* t = &RT->tex;
-    uint16_t px[64 * 16];
+    static uint16_t px[64 * P3_TALL_H];
     int failed = 0;
     /* CLUTs first: an upload of 16 words or more ends with GP1(04h) = DMA
      * CPU->GP0, the state the game keeps between frames; a CLUT (8 words)
@@ -597,8 +537,7 @@ static void spawn(CPUState* cpu, uint32_t taz, int kept)
     CloneResStats st;
     const int nrec = clone_build_resources(in, n, &g_donor, &g_layout, g_map, g_map_count,
                                            g_defaults, g_default_count,
-                                           g_daffy_char ? NULL : kTazIdleIds,
-                                           g_daffy_char ? 0 : TAZ_IDLE_COUNT,
+                                           NULL, 0,
                                            nodes, entries, records, &st);
     if (nrec < 0) {
         count("spawn_bad_list", 1);
@@ -638,7 +577,7 @@ static void spawn(CPUState* cpu, uint32_t taz, int kept)
     wr32(act + A_E4, a + A_SCALE);
     wr32(act + A_E8, 0);
     for (uint32_t k = 0; k < 3; ++k)
-        wr16(act + A_SCALE + 2u * k, g_scale);
+        wr16(act + A_SCALE + 2u * k, P3_SCALE);
 
     /* Next to Taz, on the side away from Bugs. */
     const uint32_t bugs = psx_mod_read_word(ADDR_P1);
@@ -1160,7 +1099,7 @@ static int taz_bank(uint16_t id)
 
 static int sound_start_wrap(CPUState* cpu)
 {
-    if (!g_daffy_char || g_sounds == SOUNDS_TAZ || cpu->gpr[4] == 0 || cpu->gpr[4] != bbt_p3_actor())
+    if (g_sounds == SOUNDS_TAZ || cpu->gpr[4] == 0 || cpu->gpr[4] != bbt_p3_actor())
         return 0;
     const uint16_t id = (uint16_t)cpu->gpr[5];
     if (!taz_bank(id))
@@ -1208,7 +1147,7 @@ static const uint32_t kDrawPassGuard[4] = {0x27BDFFD0u, 0xAFB20018u, 0x3C121F80u
 
 static int draw_pass_wrap(CPUState* cpu)
 {
-    const uint32_t a = (g_daffy_char && g_daffy_attack) ? bbt_p3_actor() : 0u;
+    const uint32_t a = g_daffy_attack ? bbt_p3_actor() : 0u;
     if (!a || psx_mod_read_half(a + A_ANIM_ID) != ANIM_SPIN)
         return 0;
     psx_mod_write_half(a + A_ANIM_ID, ANIM_SPIN_START);
@@ -1234,7 +1173,7 @@ static void daffy_attack_sound(CPUState* cpu, uint32_t a)
     const uint16_t anim = psx_mod_read_half(a + A_ANIM_ID);
     const uint32_t prev = st_get(ST_PREV_ANIM);
     st_set(ST_PREV_ANIM, anim);
-    if (!g_daffy_char || !g_daffy_attack || g_sounds == SOUNDS_QUIET || anim != ANIM_SPIN_START ||
+    if (!g_daffy_attack || g_sounds == SOUNDS_QUIET || anim != ANIM_SPIN_START ||
         prev == ANIM_SPIN_START || !g_update_ra)
         return;
     const uint32_t id = g_sounds == SOUNDS_TAZ ? SOUND_TAZ_SPIN : SOUND_BUGS_ATTACK;
@@ -1277,7 +1216,7 @@ static int p3actor_command(const char* args, char* reply, int cap)
             return 0;
         }
         const DonorTex* t = &RT->tex;
-        uint16_t px[64 * 32];
+        static uint16_t px[64 * P3_TALL_H];
         const uint32_t n = donor_tex_block_pixels(t, &g_plan, g, px, (uint32_t)(sizeof px / sizeof px[0]));
         snprintf(reply, (size_t)cap,
                  "{\"ok\":true,\"group\":%d,\"src_clut\":%u,\"block\":[%u,%u,%u,%u],"

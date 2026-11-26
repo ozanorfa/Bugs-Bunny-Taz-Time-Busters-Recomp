@@ -87,10 +87,9 @@ The Mods page out of the box (everything on except Decorations):
   (a controller chosen on the PLAYER 3 card) presses any button: he comes at
   once, next to Taz, also in the middle of a level. With two players he
   stays away. Options:
-  Character (Daffy, or the Transylvania enemy), Daffy's sounds (Bugs' steps,
-  jumps and attack; Taz's; or none of Taz's), and when Daffy is out (back
-  next to Taz after 5 seconds, the default; or the game's rule for Bugs and
-  Taz).
+  Daffy's sounds (Bugs' steps, jumps and attack; Taz's; or none of Taz's),
+  and when Daffy is out (back next to Taz after 5 seconds, the default; or
+  the game's rule for Bugs and Taz).
 - **Decorations** (off by default): a Turkish flag hangs from the windows
   of Granny's house in Granwich. Turn it on in Mods -> Decorations.
 

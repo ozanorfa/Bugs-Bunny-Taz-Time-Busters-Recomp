@@ -9,7 +9,7 @@ self-test rewinds (in the level they are refused: XA lockstep), the
 digests, replay vs live per seat and seat vs seat, per section, in the
 level. Output in build-tests/out/n3-rb-<K>[RUN_TAG][-features]/.
 
-    python3 tools/netplay_rb_probe.py 128 [trca01 ...]
+    python3 tools/netplay_rb_probe.py 128 [bbt.decor/turkish-flag ...]
 
 The self-test slows the menus' CD loads, so the scripted menu presses can
 miss (it then stops with "no 2P"); run it again."""

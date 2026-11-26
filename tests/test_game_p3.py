@@ -9,14 +9,18 @@ game frame, without leaking into players 1 and 2. Seat 2 is driven with the
 plugin's test command (the debug server only drives ports 1 and 2).
 
 Third actor (P4-M1 spawn, P4-M2 control): after the 2-player level load a
-copy of Taz drawn as the Transylvania enemy stands next to him; players 1
-and 2 stay Bugs and Taz with their own model and animations; its textures
-are in the free VRAM strip and it is drawn with them; seat 2 drives it and
-only it; its moves land and keep it drawn (the spin attaches a tornado); a
-level jump removes it and spawns a new one; a savestate brings it back;
+copy of Taz drawn as Daffy Duck stands next to him; players 1 and 2 stay
+Bugs and Taz with their own model and animations; his textures are in free
+VRAM at full height (the strip below the frame buffer, and an area below
+x = 512 for blocks taller than it: BUGS #25) and he is drawn with them;
+seat 2 drives him and only him; his moves land and keep him drawn; a
+level jump removes him and spawns a new one; a savestate brings him back;
 random play on all three seats keeps the game running. Phase 5: a hit on
 the third actor brings in its own HUD panel under Bugs' (one full-screen
 view).
+Daffy's own moves, attack, sounds and comeback: test_game_daffy.py.
+(Until 2026-11-26 this ran with the Transylvania enemy as the third
+character; that choice was removed.)
 Screenshots go to build-tests/out/p3/."""
 from __future__ import annotations
 
@@ -31,6 +35,7 @@ from bbt import config  # noqa: E402
 from bbt.client import fnv1a32_pixels, pad, prim_cluts  # noqa: E402
 from bbt.game import LEVEL_GRANNY, LEVEL_VICA01, TYPE_BUGS, TYPE_TAZ, in_ram, three_player_toml  # noqa: E402
 from test_game_ownview3 import P3_SCREEN_FACE, check_p3_panel  # noqa: E402
+from bbt.p3_vram import STRIP, TALL, inside  # noqa: E402
 from test_game_stock import moved, start_run  # noqa: E402
 
 moved_by = moved
@@ -42,10 +47,13 @@ ACTOR_ERRORS = ("spawn_pool_full", "spawn_bad_list", "tex_upload_failed", "tex_u
 PLACED = 0x8008DDCC
 MOD_MEMORY = 0x9F000000
 RUN = 0x0033                 # Taz's run animation id (NOTES.md "Phase 3 findings")
-TAZ_IDLE = range(0x001F, 0x0028)   # Taz's idle chain (NOTES.md "M4")
-STANCE_FRAMES = 21           # the enemy's stance 0x001C (NOTES.md "M2")
-ROLE_IDS = {0x0001, 0x0033, 0x0034, 0x0036, 0x0037, 0x0039, 0x0072, 0x004F, 0x0097, 0x0073, 0x00AA, 0x00AE}
-SCALE_75 = 0x0C00            # default "size" option, 75 %
+SCALE = 0x1000               # Daffy's own size (third_actor.c P3_SCALE)
+# Drawn with his textures: primitives using his CLUTs in a frame. Only 5 of
+# his model's records are textured (the rest is flat-shaded); 2-5 of them
+# are drawn per frame (measured 2026-11-26; the enemy drew ~130).
+MIN_DRAWN = 1
+CLIP_PASVISIBLE = 0x20       # +0x6E: not drawn this frame
+DRAW_NODES = 39              # what his set-up builds (his model's 39 nodes; measured 2026-11-26)
 
 # (seat-2 pad word, active low) -> (held bits in the game's order, stick x, stick y)
 CASES = [
@@ -59,14 +67,12 @@ CASES = [
 ]
 
 
-# The enemy, not the default Daffy: these tests check what was verified with it.
-ENEMY = {"enabled": True, "values": {"character": "enemy"}}
 class ThirdPlayer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         toml = config.out_dir() / "game_3p.toml"
         three_player_toml(config.game_toml(), toml)
-        start_run(cls, config.p3_build(), "p3", {"p3": ENEMY}, toml=toml)
+        start_run(cls, config.p3_build(), "p3", {"p3": True}, toml=toml)
 
     def need(self, *stages: str) -> None:
         for stage in stages:
@@ -126,17 +132,21 @@ class ThirdPlayer(unittest.TestCase):
         self.assertEqual(c.u16(a + 0x34), 3, "identity: Taz's")
         self.assertEqual(c.u32(a + 0x98), int(self.actor_show()["nodes"], 16), "own resource list")
         self.assertNotEqual(a, taz)
-        self.assertEqual([c.s16(a + 0xEC + 2 * k) for k in range(3)], [SCALE_75] * 3)
+        self.assertEqual([c.s16(a + 0xEC + 2 * k) for k in range(3)], [SCALE] * 3)
         p1, p2 = self.p.actor(1), self.p.actor(2)
         self.assertEqual((c.u32(p1 + 8), c.u32(p2 + 8)), (TYPE_BUGS, TYPE_TAZ))
         self.assertEqual(p2, taz)
 
     def check_vram(self) -> None:
+        """Every block in the strip or the tall area at full height (BUGS
+        #25), every CLUT in the strip, and VRAM holds what the plan says."""
         bad = []
         for g in self.groups():
             x, y, w, h = g["block"]
             cx, cy = g["clut"]
-            self.assertTrue(512 <= x and x + w <= 1024 and 240 <= y and y + h <= 256, g)
+            self.assertTrue(inside(x, y, w, h, STRIP) or inside(x, y, w, h, TALL), g)
+            self.assertEqual(g["vshift"], 0, g)
+            self.assertTrue(inside(cx, cy, 16, 1, STRIP), g)
             if f"{fnv1a32_pixels(self.c.vram(x, y, w, h)):08X}" != g["block_fnv"]:
                 bad.append(("block", g["group"]))
             if f"{fnv1a32_pixels(self.c.vram(cx, cy, 16, 1)):08X}" != g["clut_fnv"]:
@@ -148,7 +158,7 @@ class ThirdPlayer(unittest.TestCase):
         n = 0
         for _ in range(tries):
             n = self.drawn_clone_prims()
-            if n > 20:
+            if n >= MIN_DRAWN:
                 break
             self.c.press(pad("cross"))
             self.c.wait_frames(150)
@@ -236,14 +246,15 @@ class ThirdPlayer(unittest.TestCase):
         cs = self.counters()
         self.assertEqual({k: cs.get(k, 0) for k in ACTOR_ERRORS}, {k: 0 for k in ACTOR_ERRORS})
         self.assertEqual((cs.get("spawned"), cs.get("tex_uploaded"), cs.get("models")), (1, 1, 1))
-        # Taz's 67 animations (NOTES.md "Phase 3 findings"): 12 by role (hurt
-        # and death since Phase 5) and his 9 idle ones on the enemy's stance (at
-        # its own timing); 46 hold a pose.
-        self.assertEqual((cs.get("anims_mapped"), cs.get("anims_default"), cs.get("anims_native")),
-                         (21, 46, 9))
+        # Taz's 67 animations (NOTES.md "Phase 3 findings"), each mapped to
+        # one of Daffy's (Bugs' moves fitted to him) or held on his still pose
+        print(f"\n    anims mapped {cs.get('anims_mapped')} default {cs.get('anims_default')} "
+              f"native {cs.get('anims_native')}")
+        self.assertEqual(cs.get("anims_mapped", 0) + cs.get("anims_default", 0) + cs.get("anims_native", 0), 67)
+        self.assertGreaterEqual(cs.get("anims_mapped", 0), 40)
         self.assertEqual(cs.get("hold_ready"), 1)
         show = self.actor_show()
-        self.assertEqual((show["prepared"], show["tex"], show["groups"]), (1, 1, 13))
+        self.assertEqual((show["prepared"], show["tex"], show["groups"]), (1, 1, 3))
         a, taz = self.clone(), self.p.actor(2)
         self.check_actor(a, taz)
         # copied from the placed Taz untouched (no draw nodes, not initialised yet)
@@ -256,11 +267,11 @@ class ThirdPlayer(unittest.TestCase):
         xz = self.c.u32(st + 0x18)
         px, pz = struct.unpack("<2h", struct.pack("<I", xz))
         self.assertEqual(max(abs(px - sx), abs(pz - sz)), 160, (px, pz, sx, sz))
-        # draw nodes: the enemy's set-up builds 23 (NOTES.md "M2")
+        # draw nodes: his set-up builds them
         n, p = 0, self.c.u32(a + 0x9C)
         while in_ram(p) and n < 100:
             n, p = n + 1, self.c.u32(p)
-        self.assertEqual(n, 23)
+        self.assertEqual(n, DRAW_NODES)
         self.game.shot("07_three_characters")
         type(self).actor = a
         self.reached.add("actor")
@@ -284,64 +295,19 @@ class ThirdPlayer(unittest.TestCase):
         # Taz's ids are all there, so his script finds every animation it asks for
         self.assertEqual(sorted(s for _, s, _, _ in mine), sorted(s for _, s, _, _ in self.p.anim_records(taz)))
 
-    def test_08b_idle_plays_whole_loops(self):
-        """The "trembling while idle" report: Taz's 2-7 frame idle loops
-        played the first frames of the enemy's 21-frame stance back and
-        forth. Idle now plays the whole stance at its own speed; moves
-        without a role hold one still pose; idle still answers at once."""
-        self.need("actor")
-        c, a = self.c, self.actor
-        img = int(self.actor_show()["image"], 16)
-        recs = self.p.anim_records(a)
-        idle = [(sub, r, kf) for _, sub, r, kf in recs if sub in TAZ_IDLE]
-        self.assertEqual(len(idle), 9)
-        stance = {kf for _, _, kf in idle}
-        self.assertEqual(len(stance), 1, "idle ids on different donor animations")
-        for sub, r, _ in idle:
-            self.assertEqual((c.u16(r + 8), c.u8(r + 0x0B)), (STANCE_FRAMES, 2), f"{sub:04X}")
-        held = {kf for _, sub, _, kf in recs if sub not in TAZ_IDLE and sub not in ROLE_IDS}
-        self.assertEqual(len(held), 1, "moves without a role are not all on the hold")
-        self.assertTrue(img <= held.pop() < img + self.actor_show()["image_size"])
-        # per frame: an idle pass runs to its last keyframe before the next
-        c.send({"cmd": "set_snapshot", "slot": 0, "addr": f"0x{a + 0x148:08X}", "size": 8})
-        self.seat2(None)
-        c.wait_frames(260)
-        end = c.frame() - 2
-        seen, wraps_early = [], 0
-        last = None
-        for fr in range(end - 200, end):
-            r = c.send({"cmd": "read_frame_ram", "addr": f"0x{a + 0x148:08X}", "len": 8, "frame": fr})
-            nfr, cur, aid, _ = struct.unpack("<4H", bytes.fromhex(r["hex"]))
-            if aid in TAZ_IDLE:
-                seen.append(aid)
-                if last and last[0] == aid and cur < last[1] and last[1] != nfr:
-                    wraps_early += 1
-                last = (aid, cur)
-        self.assertTrue(seen, "the third actor was not idle")
-        self.assertEqual(wraps_early, 0, "an idle loop restarted before its last keyframe")
-        # still answers at once: moving within 8 frames of a press (Taz: 4-6)
-        p0 = self.p.pos(a)
-        f0 = c.frame()
-        self.seat2(pad("right"))
-        moved = c.wait_until(lambda: moved_by(self.p.pos(a), p0) > 2, 30, 1)
-        lag = c.frame() - f0
-        self.seat2(None)
-        c.wait_frames(30)
-        self.assertTrue(moved, "no reaction from idle")
-        self.assertLessEqual(lag, 12, f"{lag} frames from the press to moving")
-
     def test_08c_hud_panel_under_bugs(self):
         """Phase 5: one full-screen view, the third player's panel under
         Bugs' (test_game_ownview3.check_p3_panel)."""
         self.need("actor")
         check_p3_panel(self, self.c, self.clone(), P3_SCREEN_FACE, lambda: self.game.shot("08c_hud_panel"))
 
-    def test_09_textures_in_the_strip_and_drawn(self):
+    def test_09_textures_in_free_vram_and_drawn(self):
         self.need("actor")
         self.check_vram()
         n = self.until_drawn()
         self.game.shot("09_drawn")
-        self.assertGreater(n, 20, "the third actor is not drawn with its textures")
+        self.assertGreaterEqual(n, MIN_DRAWN, "the third actor is not drawn with its textures")
+        self.assertFalse(self.c.u16(self.actor + 0x6E) & CLIP_PASVISIBLE, "the third actor is not drawn")
 
     def test_10_seat_2_drives_only_the_third_actor(self):
         self.need("actor")
@@ -365,8 +331,9 @@ class ThirdPlayer(unittest.TestCase):
         self.assertLess(moved(p0[0], self.p.pos(a)), 120, "pad 2 moved the third actor")
 
     def test_11_moves_land_and_stay_visible(self):
-        """✕ jump, □ spin (tornado), ○, △, ✕ then △ (air spin): each ends
-        back on the floor (+0x20 bit 1, PLANCHER) with the body drawn."""
+        """✕ jump, □ attack, ○, △, ✕ then △: each ends back on the floor
+        (+0x20 bit 1, PLANCHER) with the body drawn. (Daffy's attack is
+        Bugs', without Taz's tornado: test_game_daffy test 3b.)"""
         self.need("actor")
         c, a = self.c, self.actor
         bad, report = [], []
@@ -374,7 +341,7 @@ class ThirdPlayer(unittest.TestCase):
                           ("circle", [pad("circle")]), ("triangle", [pad("triangle")]),
                           ("cross+triangle", [pad("cross"), None, pad("triangle")])):
             y0 = c.s16(a + 0xFE)
-            lo, tornado = y0, 0
+            lo = y0
             for w in seq:
                 if w is None:
                     c.wait_frames(8)
@@ -384,18 +351,16 @@ class ThirdPlayer(unittest.TestCase):
                 self.seat2(None)
             for _ in range(60):
                 lo = min(lo, c.s16(a + 0xFE))
-                tornado = tornado or c.u32(a + 0x8C)
                 c.wait_frames(2)
             c.wait_frames(40)
             floor = c.u32(a + 0x20) & 0x3
             drawn = self.drawn_clone_prims()
-            report.append(f"{name}: y {y0} min {lo} floor {floor} tornado {tornado:08X} drawn {drawn}")
-            if floor != 0x2 or drawn < 20:
+            hidden = c.u16(a + 0x6E) & CLIP_PASVISIBLE
+            report.append(f"{name}: y {y0} min {lo} floor {floor} drawn {drawn} hidden {hidden}")
+            if floor != 0x2 or drawn < MIN_DRAWN or hidden:
                 bad.append(name)
             if name.startswith("cross") and y0 - lo < 200:
                 bad.append(name + " (no jump)")
-            if name in ("square", "cross+triangle") and not tornado:
-                bad.append(name + " (no tornado)")
         print("\n    " + "\n    ".join(report))
         self.assertEqual(bad, [])
 
@@ -413,7 +378,7 @@ class ThirdPlayer(unittest.TestCase):
             self.check_vram()
             n = self.until_drawn()
             self.game.shot(f"12_level_{level}")
-            self.assertGreater(n, 20, f"third actor not drawn in level {level}")
+            self.assertGreaterEqual(n, MIN_DRAWN, f"third actor not drawn in level {level}")
         type(self).actor = self.clone()
 
     def test_13_savestate_round_trip(self):
@@ -470,7 +435,7 @@ class ThirdPlayer(unittest.TestCase):
         nodes, hidden, p = 0, 0, c.u32(a + 0x9C)
         while in_ram(p) and nodes < 100:
             nodes, hidden, p = nodes + 1, hidden + bool(c.u16(p + 6) & 0x8000), c.u32(p)
-        self.assertEqual((nodes, hidden), (23, 0))
+        self.assertEqual((nodes, hidden), (DRAW_NODES, 0))
 
 
 if __name__ == "__main__":

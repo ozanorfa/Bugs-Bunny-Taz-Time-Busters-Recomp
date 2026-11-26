@@ -6,7 +6,8 @@ Not part of run_tests.py (it takes most of an hour). For each level id in
 the range: the verified level jump (NOTES.md "Level jump"), then, if the
 level loaded with both heroes, ~20 s of random play on all three seats; it
 records whether the third character spawned, the mod's error counters, the
-frame rate, and a screenshot. A level that does not load in time, or a game
+frame rate, whether his textures are still in VRAM as uploaded (BUGS #25:
+the tall area below x = 512 must stay unwritten), and a screenshot. A level that does not load in time, or a game
 that stops answering, is recorded and the game is started again for the
 next id. Results: build-tests/out/soak_tour/report.json and the screenshots.
 
@@ -25,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
-from bbt.client import pad  # noqa: E402
+from bbt.client import fnv1a32_pixels, pad  # noqa: E402
 from bbt.game import GameRun, Player, three_player_toml  # noqa: E402
 
 FEATS = {"p3": True, "bbt.own-view/two-views": True, "bbt.quick-start/quick-start": True}
@@ -66,6 +67,23 @@ def random_play(g, frames: int, rng: random.Random) -> None:
         c.mod_cmd("bbt.p3", f"{pad(rng.choice(BUTTONS)):04X}")
         c.wait_frames(20)
     c.release(port=1); c.release(port=2); c.mod_cmd("bbt.p3", "off")
+
+
+def textures_changed(c) -> list[str]:
+    """The third character's blocks and CLUTs whose VRAM no longer holds
+    what the plugin uploaded (empty when he has none)."""
+    bad = []
+    for gi in range(c.mod_cmd("bbt.p3actor", "show").get("groups", 0)):
+        g = c.mod_cmd("bbt.p3actor", f"group {gi}")
+        if not g.get("ok"):
+            continue
+        x, y, w, h = g["block"]
+        if f"{fnv1a32_pixels(c.vram(x, y, w, h)):08X}" != g["block_fnv"]:
+            bad.append(f"block {gi} at ({x},{y})")
+        cx, cy = g["clut"]
+        if f"{fnv1a32_pixels(c.vram(cx, cy, 16, 1)):08X}" != g["clut_fnv"]:
+            bad.append(f"clut {gi} at ({cx},{cy})")
+    return bad
 
 
 def main(argv: list[str]) -> int:
@@ -129,6 +147,7 @@ def main(argv: list[str]) -> int:
                     clone=c.mod_cmd("bbt.p3actor", "show").get("state"),
                     hud_updates=d.get(H3 + "update", 0),
                     errors={e: d[A3 + e] for e in ERRORS if d.get(A3 + e)},
+                    textures_changed=textures_changed(c) if d.get(A3 + "spawned") else [],
                     frames_per_vblank=round((f1 - f0) / views / max(1, v1 - v0), 3),
                     lives=c.u8(0x800100A0),
                     seconds=round(time.monotonic() - t0, 1),
@@ -140,7 +159,7 @@ def main(argv: list[str]) -> int:
         (out / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     (out / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     played = [r for r in report if r["result"] == "played"]
-    bad = [r for r in played if r.get("errors")]
+    bad = [r for r in played if r.get("errors") or r.get("textures_changed")]
     print(f"\n{len(report)} ids: {len(played)} played, {len(bad)} with errors; "
           f"{sum(1 for r in played if r.get('spawned'))} with the third character", flush=True)
     return 1 if bad else 0

@@ -3,7 +3,7 @@
 ```sh
 python3 tests/run_tests.py              # everything that can run here
 python3 tests/run_tests.py unit disc    # the fast tiers (~20 s)
-python3 tests/run_tests.py game -k trca01
+python3 tests/run_tests.py game -k daffy
 ```
 
 Exit status: 0 passed, 1 failed, 77 nothing could run (all skipped). The
@@ -30,7 +30,7 @@ in per-configuration folders of multi-config generators.
 |---|---|---|
 | `c-unit` | a C compiler | `src/mods/bouze.c`, `donor.c`, `donor_tex.c`, `clone_res.c`, `retarget.c`, `mod_blocks.c` on synthetic data built by `tests/unit/synth.c`: the LZ decoder (literals, matches, long lengths, the longest match, stopping at the token count), header and record/tag grammar (offsets that wrap refused), donor extraction, the synthetic spin and its attach node, Taz's record patch and timing fixes, the scale patch, texture analysis and rebuild (CLUT bit 15, CLUT blocks that declare more rows than they carry), the VRAM map, the target pool, packing (uploaded VRAM only, one texture page per block) and the record patch; the animation picker, the model relocation (as the loader's FUN_8005BB84), the strip packing for the third actor (half-height blocks, records sampling the kept rows), the hold animation, and the third actor's own resource list (with native idle timing); the retargeting's angle / matrix math (Euler round trip, RotMatrix layout, bone alignment), a skeleton retargeted onto itself keeping its rotations, resampling to any length, a parent byte past the 64-node tables; the mods' fixed guest memory layout (BUGS #56) |
 | `python-unit` | Python | `tools/bouze/` (decoder, record parser, keyframe parser) against the C code's synthetic level and spin, the ISO 9660 reader on synthetic 2048- and 2352-byte images, disc lookup from `game.toml` / `.cue`, the 3-player `game.toml` writer, `mods/state.toml` writing and restoring |
-| `disc` | the player's disc (`game.toml` `[game] disc`) | it is the known dump (size, MD5); file layout; all 63 `.BZZ` files decode identically in C and Python and parse to their end marker; the TRCA01 enemy as the plugin extracts it (model, role table complete, spin on node 23, its 13 texture blocks / CLUTs as verified in VRAM); its and Taz's animations parse exactly; in all 38 levels with Taz the patch touches only his payloads and the texture plan fits (except `AZR01`, a known exception); the third actor's strip plan fits and every record samples inside its block; its hold animation is the stance's first frame plus empty frames |
+| `disc` | the player's disc (`game.toml` `[game] disc`) | it is the known dump (size, MD5); file layout; all 63 `.BZZ` files decode identically in C and Python and parse to their end marker; Daffy as the third actor's plugin extracts him from `LEVEL1/RETRY.BZZ` (model 19, his animations, the synthetic spin on node 39, the hold pose, his 3 texture blocks / CLUTs) and where they go in VRAM: every block at full height (the 16-row one in the strip, the two taller ones in the tall area below x = 512), records sampling inside their blocks (BUGS #25)
 | `game` | `build-dev` (2 seats, `PSX_DEBUG_TOOLS=ON`); `build-p3` (`-DBBT_MAX_PLAYERS=5`) for the 3-player test; `build-net` (`-DPSX_NETPLAY=ON -DRNET_ENABLE_ICE=OFF -DBBT_MAX_PLAYERS=5`) for the netplay test; the disc | end to end through the debug server, see below |
 
 The C tiers also run under AddressSanitizer and UndefinedBehaviorSanitizer
@@ -65,24 +65,16 @@ run against `build-release`, which holds your own mod selection
   TWO PLAYERS (with pad 2 connected), Granwich with Bugs as P1 and Taz as
   P2, each pad moves only its own character, Taz keeps his own animations,
   no plugin activity.
-- `test_game_trca01.py` — Taz as the Transylvania enemy: donor loaded and
-  every load path clean (counters); Taz plays only donor animations, Bugs
-  is untouched; the enemy's textures are in VRAM exactly where the plugin
-  uploaded them (pixel hashes from `{"cmd":"mod_cmd","name":"bbt.trca01"}`)
-  and Taz is drawn with them; ✕ ○ □ △ each bring Taz back to the ground
-  with his body drawn (the floating / invisible reports); the spin attaches
-  the tornado; a level jump to VICA01 relocates the textures again; the
-  jump to TRCA01 keeps the enemy's own.
 - `test_game_p3.py` — the third player (feature `p3`, `build-p3` with a
   3-player `game.toml`): with the multitap on port 2 the 2-player game
   still works (pad 2 = tap slot A); the plugin's third record follows seat
   2 in the game's bit order once per game frame (driven with
   `{"cmd":"mod_cmd","name":"bbt.p3"}`); a third actor (Taz's copy drawn as
-  the enemy) is spawned next to Taz with its own resources while Bugs and
-  Taz keep theirs; its textures are in the VRAM strip (pixel hashes from
-  `{"cmd":"mod_cmd","name":"bbt.p3actor"}`) and it is drawn with them;
-  it plays whole idle loops (no trembling) and still answers at once; seat 2 drives only it; ✕ □ ○ △ and the air spin land it on the floor
-  drawn (the spin with a tornado); level jumps replace it; a savestate
+  Daffy) is spawned next to Taz with its own resources while Bugs and
+  Taz keep theirs; his textures are in free VRAM at full height (pixel
+  hashes from `{"cmd":"mod_cmd","name":"bbt.p3actor"}`) and he is drawn
+  with them; seat 2 drives only him; ✕ □ ○ △ land him on the floor
+  drawn; level jumps replace him; a savestate
   brings it back; random play on all three seats keeps the game running.
   Phase 5: a real hit (2 damage) brings in the third player's own HUD
   panel (sprites 15 / 16) under Bugs' panel, its bar blinks while the hit's
@@ -124,8 +116,7 @@ run against `build-release`, which holds your own mod selection
   (EnemiesSeeTheThirdPlayer) jumps to TRCA01: a Transylvania enemy (model
   635) ignores the third player while the codes 4-7 rule is off (debug
   command `ref-third off`) and chases and hits it once it is on.
-- `test_game_daffy.py` — Daffy as the third character (`p3`, option
-  character = daffy, build-p3): his donor is prepared (textures, 40+
+- `test_game_daffy.py` — Daffy as the third character (`p3`, build-p3): his donor is prepared (textures, 40+
   retargeted moves, image under 0x1E000 bytes), he spawns, running and
   jumping play the retargeted animations from the mod image and move him,
   he lands drawn, his HUD panel and the hit rule work (`check_p3_panel`),
@@ -162,11 +153,11 @@ run against `build-release`, which holds your own mod selection
   peers on 127.0.0.1 in a rollback match (`--netplay`, `PSX_NET_MODE=rollback`),
   each from a folder of its own under `build-tests/out/net-*/` (a link to
   the executable, its own `mods/`), so the build's `mods/state.toml` is not
-  used. Both on "Taz becomes the Transylvania enemy": the host plays into
+  used. Both on the Turkish flag (`bbt.decor`): the host plays into
   Granwich, the mod is active on both peers, and the machine digests both
   logged every 32 ticks agree. One peer with the mod and one without: the
-  match never starts ("LAN content differs between peers"). Both also on
-  Quick start: it acts alike on both peers and the digests agree. Both on
+  match never starts ("LAN content differs between peers"). Both on Quick
+  start and the flag: they act alike on both peers and the digests agree. Both on
   Quick start and the own view, each in a hidden OpenGL window
   (`NetMatch(window=True)`, GL scale capped at 2x with `PSX_GL_MAX_DIM`):
   each peer draws its own player's view full screen
@@ -189,7 +180,7 @@ run against `build-release`, which holds your own mod selection
   while it sleeps):
   two launchers driven by recomp-ui's script hook (`LNG_SCRIPT`, hidden
   windows), host Host Lobby -> Create Lobby, guest Join Direct
-  127.0.0.1:7777, host PLAY. The host selected the Phase 3 mod and Quick
+  127.0.0.1:7777, host PLAY. The host selected the Turkish flag and Quick
   start, the guest nothing: both run the host's mods, the digests agree,
   and the guest's own selection is unchanged. Click positions are for the
   1100x750 launcher layout; when the launcher's layout changes, update them

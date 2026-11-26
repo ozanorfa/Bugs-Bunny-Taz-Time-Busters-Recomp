@@ -29,11 +29,21 @@ room refuses a guest whose packages are another version. A version marked
   that keep other terms), this changelog, and a README covering the original
   PlayStation game, what this project is and each mod with pictures.
 
+### Removed
+- **The Transylvania enemy as a character.** Daffy is now always the third
+  player: the "Character" choice and its "Size" option are gone, and so are
+  two older developer tests, "Taz becomes the Transylvania enemy" and
+  "Swap test: Taz uses Bugs' model". The enemy is still in the game as an
+  enemy, as in the original.
+
 ### Changed
 - **Matches tolerate short silences.** A match ends on every PC when one PC
   goes silent. The start files now wait 5 seconds before that, instead of the
   framework's 1.5 seconds, because matches over Radmin VPN ended after a few
-  minutes with no PC crashed. Not yet tried in a real match.
+  minutes with no PC crashed. Not yet tried in a real match. It does not
+  help when one of three PCs stalls for a second or more: that still ends
+  the match about 20 seconds later on every PC (a framework issue, found in
+  a test with three games on one Mac).
 - **True colour by default:** the picture is drawn without the PlayStation's
   dither pattern. To bring it back: Mods -> Image Filtering, turn it on, then
   Dithering = Native (PS1).
@@ -49,9 +59,8 @@ room refuses a guest whose packages are another version. A version marked
   full speed on our test machine. Not yet tried on Windows PCs.
 - **Changing Mods in a LAN room should no longer split the next match.**
   The mods' memory now sits at the same place on every PC whatever was
-  played before, it is cleared before every match, and switching between
-  Daffy and the Transylvania enemy in the room builds the other character's
-  moves. Not yet tried in a real room, so the guides still ask everyone to
+  played before, and it is cleared before every match. Not yet tried in a
+  real room, so the guides still ask everyone to
   restart the game after the host changes Mods.
 - Setup takes a disc path typed at its prompt also when it is relative
   (for example `..\disc\game.cue`); before, it stopped with "no disc at".
@@ -65,6 +74,10 @@ room refuses a guest whose packages are another version. A version marked
   with a half-size copy of their texture. That copy now has a half-size flag,
   so the flag of a farther window no longer vanishes and pops back. The
   6-pane window that shares the wall's colours lost its red and white specks.
+- **Daffy is drawn at full detail.** His textures had room for only 16 rows
+  of video memory, so his two taller texture pieces lost every second row
+  and looked coarse. They now go to a part of video memory that no level
+  uses (measured over 32 levels), at full height.
 
 ## 0.5.0 — 2026-11-14 — players' ZIP
 

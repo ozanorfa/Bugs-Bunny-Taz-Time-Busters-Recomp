@@ -322,15 +322,23 @@ static void plan_keeps_blocks_inside_one_page(void)
 
 /* Strip placement: every block in the strip, inside one page, every
  * 2^vshift-th row uploaded, records sampling the kept rows. */
-static void check_strip_plan(const Fixture* f, const DonorTexPlan* plan, int x0, int y0, int w,
-                             int h, int want_shift)
+/* Block g lies in the strip (x0, y0, w, h) or, with tall[g], in the second
+ * area (tx, ty, tw, th), keeping every (1 << shift[g])-th row; CLUTs in the
+ * strip; nothing overlaps; every patched texel samples its source row. */
+static void check_plan_areas(const Fixture* f, const DonorTexPlan* plan, int x0, int y0, int w,
+                             int h, int tx, int ty, int tw, int th, const int* tall,
+                             const int* shift)
 {
     int rx[8], ry[8], rw[8], rh[8], n = 0;
     for (int g = 0; g < f->t.block_count; ++g) {
         const DonorTexBlock* b = &f->t.blocks[g];
+        const int want_shift = shift[g];
         CHECK_EQ(plan->vshift[g], want_shift);
         CHECK_EQ(plan->block_h[g], (b->h + (1 << want_shift) - 1) >> want_shift);
-        CHECK(inside(plan->block_x[g], plan->block_y[g], b->w, plan->block_h[g], x0, y0, w, h));
+        if (tall[g])
+            CHECK(inside(plan->block_x[g], plan->block_y[g], b->w, plan->block_h[g], tx, ty, tw, th));
+        else
+            CHECK(inside(plan->block_x[g], plan->block_y[g], b->w, plan->block_h[g], x0, y0, w, h));
         CHECK_EQ(plan->block_x[g] / 64, (plan->block_x[g] + b->w - 1) / 64);
         CHECK_EQ(plan->tpage[g], (plan->block_x[g] / 64) | ((plan->block_y[g] / 256) << 4));
         CHECK_EQ(plan->clut_x[g] % 16, 0);
@@ -368,13 +376,20 @@ static void check_strip_plan(const Fixture* f, const DonorTexPlan* plan, int x0,
                            plan->block_y[g], b->w, plan->block_h[g]);
             /* the row it samples holds the source row (v rounded down) */
             const int row = py + out[o + 1] - plan->block_y[g];
-            bad += row != ((f->t.page_y + in[o + 1] - b->y) >> want_shift);
+            bad += row != ((f->t.page_y + in[o + 1] - b->y) >> shift[g]);
             bad += px + out[o] / 4 - plan->block_x[g] != f->t.page_x + in[o] / 4 - b->x;
         }
-        if (want_shift == 0)
+        if (shift[g] == 0)
             bad += out[1] != (uint8_t)(in[1] + plan->dv[g]);
     }
     CHECK_EQ(bad, 0);
+}
+
+static void check_strip_plan(const Fixture* f, const DonorTexPlan* plan, int x0, int y0, int w,
+                             int h, int want_shift)
+{
+    const int tall[2] = {0, 0}, shift[2] = {want_shift, want_shift};
+    check_plan_areas(f, plan, x0, y0, w, h, 0, 0, 0, 0, tall, shift);
 }
 
 static void plan_strip_keeps_every_other_row(void)
@@ -418,6 +433,70 @@ static void plan_strip_rejects(void)
     fixture_free(&f);
 }
 
+static void plan_strip_tall_keeps_full_rows(void)
+{
+    Fixture f;
+    fixture(&f);
+    REQUIRE(f.ok);
+    REQUIRE(f.t.block_count == 2);             /* two 8x16 blocks */
+    DonorTexPlan plan;
+    /* both taller than the 8-row strip: full height in the second area */
+    REQUIRE(donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 8, 448, 448, 64, 32, &plan));
+    {
+        const int tall[2] = {1, 1}, shift[2] = {0, 0};
+        check_plan_areas(&f, &plan, 512, 240, 512, 8, 448, 448, 64, 32, tall, shift);
+    }
+    CHECK(plan.block_x[0] == 448 && plan.block_x[1] == 456);
+    CHECK_EQ(plan.tpage[0], 7 | (1 << 4));
+    /* one block wide: the second goes below the first */
+    REQUIRE(donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 8, 448, 448, 8, 32, &plan));
+    {
+        const int tall[2] = {1, 1}, shift[2] = {0, 0};
+        check_plan_areas(&f, &plan, 512, 240, 512, 8, 448, 448, 8, 32, tall, shift);
+    }
+    CHECK(plan.block_x[1] == 448 && plan.block_y[1] == 464);
+    /* room for one: the other goes to the strip at half height */
+    REQUIRE(donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 8, 448, 448, 8, 16, &plan));
+    {
+        const int tall[2] = {1, 0}, shift[2] = {0, 1};
+        check_plan_areas(&f, &plan, 512, 240, 512, 8, 448, 448, 8, 16, tall, shift);
+    }
+    /* never across a texture page: in 60..70 a block would need 64..71 */
+    REQUIRE(donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 8, 60, 448, 11, 32, &plan));
+    {
+        const int tall[2] = {0, 0}, shift[2] = {1, 1};
+        check_plan_areas(&f, &plan, 512, 240, 512, 8, 60, 448, 11, 32, tall, shift);
+    }
+    /* blocks that fit the strip stay there; a second area taller than a
+     * block keeps every row: area 12 rows, blocks 16 -> every 2nd row */
+    REQUIRE(donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 4, 448, 448, 64, 12, &plan));
+    {
+        const int tall[2] = {1, 1}, shift[2] = {1, 1};
+        check_plan_areas(&f, &plan, 512, 240, 512, 4, 448, 448, 64, 12, tall, shift);
+    }
+    REQUIRE(donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 16, 448, 448, 64, 32, &plan));
+    check_strip_plan(&f, &plan, 512, 240, 512, 16, 0);
+    /* without a second area it is the plain strip */
+    DonorTexPlan plain;
+    REQUIRE(donor_tex_plan_strip(&f.t, 512, 240, 512, 8, &plain));
+    REQUIRE(donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 8, 0, 0, 0, 0, &plan));
+    CHECK(memcmp(&plain, &plan, sizeof plan) == 0);
+    fixture_free(&f);
+}
+
+static void plan_strip_tall_rejects(void)
+{
+    Fixture f;
+    fixture(&f);
+    REQUIRE(f.ok);
+    DonorTexPlan plan;
+    CHECK(!donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 8, 448, 240, 64, 32, &plan)); /* crosses a page row */
+    CHECK(!donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 8, 520, 224, 16, 32, &plan)); /* overlaps the strip */
+    CHECK(!donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 8, 448, 448, 64, 8, &plan));  /* not taller */
+    CHECK(!donor_tex_plan_strip_tall(&f.t, 512, 240, 512, 8, 1020, 448, 8, 32, &plan)); /* past VRAM */
+    fixture_free(&f);
+}
+
 const TestCase kDonorTexTests[] = {
     {"extract_groups_and_records", extract_groups_and_records},
     {"extract_rebuilds_pixels", extract_rebuilds_pixels},
@@ -429,5 +508,7 @@ const TestCase kDonorTexTests[] = {
     {"plan_keeps_blocks_inside_one_page", plan_keeps_blocks_inside_one_page},
     {"plan_strip_keeps_every_other_row", plan_strip_keeps_every_other_row},
     {"plan_strip_rejects", plan_strip_rejects},
+    {"plan_strip_tall_keeps_full_rows", plan_strip_tall_keeps_full_rows},
+    {"plan_strip_tall_rejects", plan_strip_tall_rejects},
 };
 const int kDonorTexTestCount = (int)(sizeof(kDonorTexTests) / sizeof(kDonorTexTests[0]));

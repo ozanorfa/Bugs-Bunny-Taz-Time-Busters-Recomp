@@ -203,7 +203,7 @@ class DebugClient:
 
 def fnv1a32_pixels(pixels) -> int:
     """FNV-1a 32 over 16-bit pixels as little-endian bytes (the plugin's
-    bbt.trca01 command hashes uploaded pixels the same way)."""
+    bbt.p3actor command hashes uploaded pixels the same way)."""
     h = 2166136261
     for p in pixels:
         for b in (p & 0xFF, p >> 8):

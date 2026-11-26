@@ -118,6 +118,15 @@ int donor_tex_plan(const DonorTex* t, const DonorTexPool* pool, const VramMap* u
  * Returns 1 if everything fits. */
 int donor_tex_plan_strip(const DonorTex* t, int x0, int y0, int w, int h, DonorTexPlan* plan);
 
+/* As donor_tex_plan_strip, with a second free area (tx, ty, tw x th, inside
+ * one texture-page row, apart from the strip) for the blocks taller than the
+ * strip: they go there left to right and then in further rows below (each
+ * inside one texture page), at full height (or every 2nd row if taller than
+ * th), while they fit; the others and the CLUTs go to the strip as before.
+ * tw = 0: no second area. */
+int donor_tex_plan_strip_tall(const DonorTex* t, int x0, int y0, int w, int h,
+                              int tx, int ty, int tw, int th, DonorTexPlan* plan);
+
 /* The pixels to upload for block `i` under `plan` (plan->block_h rows of
  * the block's width): the rows the plan keeps. Returns the pixel count. */
 uint32_t donor_tex_block_pixels(const DonorTex* t, const DonorTexPlan* plan, int i,

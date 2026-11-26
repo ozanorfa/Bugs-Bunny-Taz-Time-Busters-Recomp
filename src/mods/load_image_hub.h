@@ -1,10 +1,10 @@
 /*
  * One override for the PsyQ LoadImage core (func_80071110, RECT *a0,
  * data *a1), shared by the features that watch or change texture uploads:
- * the Transylvania-enemy test (bbt.third-character trca01: a map of where a
- * level load puts pixels) and the Turkish flag (bbt.decor: rewrites one
- * wall texture's source). The framework refuses two armed overrides on one
- * address, so the override lives in the hidden feature
+ * today only the Turkish flag (bbt.decor: rewrites one wall texture's
+ * source; the Transylvania-enemy test that also mapped uploads was removed
+ * on 2026-11-26). The framework refuses two armed overrides on one address,
+ * so the override lives in the hidden feature
  * bbt.shared/load-image (plugin bbt.shared.load-image,
  * src/mods/load_image_hub.c), which each of those features requires
  * ([[requirement]]). Each feature sets its hook from its activation
@@ -19,8 +19,7 @@
 struct CPUState;
 
 enum {
-    BBT_LOAD_IMAGE_HOOK_TRCA01 = 0,   /* bbt.third-character trca01: upload map */
-    BBT_LOAD_IMAGE_HOOK_DECOR = 1,    /* bbt.decor: the flag */
+    BBT_LOAD_IMAGE_HOOK_DECOR = 0,    /* bbt.decor: the flag */
     BBT_LOAD_IMAGE_HOOK_COUNT
 };
 

@@ -1,15 +1,15 @@
-"""Game tier: Daffy Duck as the third character (feature "p3", its
-default character since 2026-11-08) in the 5-seat build with debug tools (build-p3), a
+"""Game tier: Daffy Duck as the third character (feature "p3"; the only
+one since 2026-11-26) in the 5-seat build with debug tools (build-p3), a
 3-player copy of game.toml and Quick start.
 
 Daffy comes from LEVEL1/RETRY.BZZ (model 19, read by resource id); his
 moves are Bugs' animations retargeted onto his skeleton at Taz's frame
 counts (src/mods/retarget.c, daffy_moves.c; NOTES.md "Daffy as the third
 character"). Checked: the donor is prepared with his textures and the
-retargeted moves; the third actor spawns as him; running and jumping play
+retargeted moves, his textures at full height (BUGS #25); the third actor
+spawns as him; running and jumping play
 the retargeted animations (their keyframes are in the mod image) and move
-him; his HUD panel and the hit / invincibility rule work as with the
-enemy; a deadly hit takes him out; his attack (Taz's spin, his only
+him; his HUD panel and the hit / invincibility rule work; a deadly hit takes him out; his attack (Taz's spin, his only
 attack) is Bugs' □ attack drawn on him, with no tornado, and still hits;
 his moves make Bugs' sounds, or none of Taz's with sounds = "quiet"
 (NOTES.md "Daffy's spin and sounds"); the game's package (script
@@ -25,7 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bbt import config  # noqa: E402
-from bbt.client import pad  # noqa: E402
+from bbt.client import fnv1a32_pixels, pad  # noqa: E402
+from bbt.p3_vram import STRIP, TALL, inside  # noqa: E402
 from bbt.game import three_player_toml  # noqa: E402
 from test_game_ownview3 import (CLIP_PASVISIBLE, DEATH, HERO_DOWN, LIVES, P3_SCREEN_FACE,  # noqa: E402
                                 check_p3_panel, flat, hit)
@@ -116,6 +117,27 @@ class Daffy(unittest.TestCase):
         self.assertLess(show["image_size"], 0x1E000, "the image no longer fits the mod block")
         self.game.shot("1_spawned")
         self.reached.add("daffy")
+
+    def test_1b_his_textures_at_full_height(self):
+        """BUGS #25: his three blocks keep every row (the taller two in the
+        tall area below x = 512, the other in the strip), the CLUTs are in
+        the strip, and VRAM holds what the plan says."""
+        self.need("daffy")
+        bad = []
+        groups = [self.c.mod_cmd("bbt.p3actor", f"group {g}") for g in range(self.show()["groups"])]
+        self.assertEqual(len(groups), 3)
+        for g in groups:
+            x, y, w, h = g["block"]
+            cx, cy = g["clut"]
+            self.assertEqual(g["vshift"], 0, g)
+            self.assertTrue(inside(x, y, w, h, STRIP) or inside(x, y, w, h, TALL), g)
+            self.assertTrue(inside(cx, cy, 16, 1, STRIP), g)
+            if f"{fnv1a32_pixels(self.c.vram(x, y, w, h)):08X}" != g["block_fnv"]:
+                bad.append(("block", g["group"]))
+            if f"{fnv1a32_pixels(self.c.vram(cx, cy, 16, 1)):08X}" != g["clut_fnv"]:
+                bad.append(("clut", g["group"]))
+        self.assertEqual(bad, [])
+        self.assertEqual(sum(inside(*g["block"], TALL) for g in groups), 2, groups)
 
     def test_2_running_plays_the_retargeted_run(self):
         self.need("daffy")

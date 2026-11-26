@@ -29,7 +29,6 @@ typedef enum BbtBlock {
     BBT_BLOCK_P3_RECORD,       /* third_player.c: the third player's input record */
     BBT_BLOCK_P3_ACTOR,        /* third_actor.c: the third actor's state, resources, image */
     BBT_BLOCK_P3_HUD,          /* third_hud.c: the third player's panel */
-    BBT_BLOCK_TRCA01_DONOR,    /* third_character.c: the Transylvania enemy's donor */
     BBT_BLOCK_VIEW2_ARENA,     /* own_view.c: GPU DMA aperture, the other views' primitives */
     BBT_BLOCK_COUNT
 } BbtBlock;
@@ -39,7 +38,6 @@ typedef enum BbtBlock {
 #define BBT_BLOCK_P3_RECORD_BYTES    0x40u
 #define BBT_BLOCK_P3_ACTOR_BYTES     0x20000u
 #define BBT_BLOCK_P3_HUD_BYTES       0x40u
-#define BBT_BLOCK_TRCA01_DONOR_BYTES 0x20000u
 #define BBT_BLOCK_VIEW2_ARENA_BYTES  0xC0000u   /* 3 x VIEW2_ARENA_BYTES */
 #define BBT_BLOCK_ALIGN              16u
 

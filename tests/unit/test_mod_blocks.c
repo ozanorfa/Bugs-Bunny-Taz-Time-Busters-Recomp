@@ -44,7 +44,8 @@ static void the_default_layout(void)
 {
     /* The addresses measured in a 0.6.0 session with the default features
      * (2026-11-23: own view, third player, third actor, HUD; bbt.p3,
-     * bbt.p3actor and bbt.p3hud commands), then the enemy's donor. */
+     * bbt.p3actor and bbt.p3hud commands). The Transylvania enemy's
+     * donor block after them went with that feature (2026-11-26). */
     reset();
     uint32_t a[BBT_BLOCK_COUNT];
     CHECK_EQ(bbt_blocks_allocate(cpu_alloc, dma_alloc, a), BBT_BLOCK_COUNT);
@@ -53,10 +54,9 @@ static void the_default_layout(void)
     CHECK_EQ(a[BBT_BLOCK_P3_RECORD], 0x9F002050u);
     CHECK_EQ(a[BBT_BLOCK_P3_ACTOR], 0x9F002090u);
     CHECK_EQ(a[BBT_BLOCK_P3_HUD], 0x9F022090u);
-    CHECK_EQ(a[BBT_BLOCK_TRCA01_DONOR], 0x9F0220D0u);
     CHECK_EQ(a[BBT_BLOCK_VIEW2_ARENA], 0x80800000u);
     /* the used sizes a state load between PCs compares */
-    CHECK_EQ(g_cpu_used, 0x420D0u);
+    CHECK_EQ(g_cpu_used, 0x220D0u);
     CHECK_EQ(g_dma_used, BBT_BLOCK_VIEW2_ARENA_BYTES);
     CHECK_EQ(g_cpu_calls, BBT_BLOCK_COUNT - 1);
     CHECK_EQ(g_dma_calls, 1);
